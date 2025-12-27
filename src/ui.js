@@ -1,5 +1,7 @@
 export function renderUI(data, config) {
-  const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
+  // 服务端使用的转义 (用于 HTML 头部)
+  const serverEsc = (str) => String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
+  // 数据注入
   const safeJson = JSON.stringify(data).replace(/</g, "\\u003c");
 
   return `<!DOCTYPE html>
@@ -7,13 +9,13 @@ export function renderUI(data, config) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>${esc(config.TITLE)}</title>
+<title>${serverEsc(config.TITLE)}</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <style>
   :root { --glass: rgba(22,22,22,0.9); --glass-border: rgba(255,255,255,0.1); --accent: #3b82f6; }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   body { 
-    background: url('${esc(config.BG_IMAGE)}') center/cover fixed; 
+    background: url('${serverEsc(config.BG_IMAGE)}') center/cover fixed; 
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
     color: #fff; min-height: 100vh; padding-bottom: 90px; 
   }
@@ -41,11 +43,11 @@ export function renderUI(data, config) {
   .card img { width: 38px; height: 38px; margin-bottom: 10px; border-radius: 8px; background: rgba(255,255,255,0.05); object-fit: cover; }
   .card span { font-size: 12px; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; }
 
-  /* Edit Mode Styles */
+  /* Edit Mode */
   .del-btn { display: none; position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; background: #ef4444; border-radius: 50%; border: 2px solid rgba(255,255,255,0.9); z-index: 10; cursor: pointer; }
   .editing .del-btn { display: block; }
   .editing .card { border-color: #eab308; animation: shake 0.25s infinite alternate; }
-  .editing .card img { pointer-events: none; } /* Prevent drag */
+  .editing .card img { pointer-events: none; }
   @keyframes shake { from { transform: rotate(-1deg); } to { transform: rotate(1deg); } }
 
   /* Dock */
@@ -69,20 +71,11 @@ export function renderUI(data, config) {
 <body>
 
   <nav class="nav" id="nav-list"></nav>
-
-  <div class="search-box">
-    <input class="search-input" id="search" placeholder="Search Google..." autocomplete="off">
-  </div>
-
+  <div class="search-box"><input class="search-input" id="search" placeholder="Search Google..." autocomplete="off"></div>
   <div class="grid" id="grid"></div>
+  <div class="dock" id="dock"><div class="dock-btn" onclick="setEditMode(true)">⚙️</div></div>
 
-  <!-- 动态 Dock 栏 -->
-  <div class="dock" id="dock">
-    <!-- 默认只有齿轮，JS 会动态填充 -->
-    <div class="dock-btn" onclick="setEditMode(true)">⚙️</div>
-  </div>
-
-  <!-- Modal: Edit/Add Link -->
+  <!-- Modal: Link -->
   <div class="modal-mask" id="m-link"><div class="modal">
     <h3 id="m-link-title">添加链接</h3>
     <input id="l-name" placeholder="网站名称">
@@ -94,7 +87,7 @@ export function renderUI(data, config) {
     </div>
   </div></div>
 
-  <!-- Modal: Edit/Add Cat -->
+  <!-- Modal: Cat -->
   <div class="modal-mask" id="m-cat"><div class="modal">
     <h3 id="m-cat-title">分类管理</h3>
     <input id="c-name" placeholder="分类名称">
@@ -109,33 +102,25 @@ export function renderUI(data, config) {
   let DATA = ${safeJson};
   let activeCatId = DATA[0]?.id || 0;
   let isEditing = false;
-  // 用于记录当前正在修改的 Item ID (null 表示新增)
   let editingId = null; 
 
-  // --- 核心渲染逻辑 ---
-  
+  // [修复] 客户端必须重新定义 esc 函数，否则浏览器报错
+  function esc(str) {
+    return String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
+  }
+
   function getIcon(url) {
     let safeUrl = url.trim();
-    if (!safeUrl || /^javascript:/i.test(safeUrl)) return "https://cdn-icons-png.flaticon.com/512/1006/1006771.png"; // Globe
+    if (!safeUrl || /^javascript:/i.test(safeUrl)) return "https://cdn-icons-png.flaticon.com/512/1006/1006771.png"; 
     if (/^magnet:/i.test(safeUrl)) return "https://cdn-icons-png.flaticon.com/512/1250/1250308.png";
     if (/^mailto:/i.test(safeUrl)) return "https://cdn-icons-png.flaticon.com/512/732/732200.png";
-    
-    // 默认 favicon
     try {
       const domain = new URL(safeUrl.startsWith('http') ? safeUrl : 'https://'+safeUrl).hostname;
       return \`https://api.iowen.cn/favicon/\${domain}.png\`;
     } catch(e) { return "https://cdn-icons-png.flaticon.com/512/1006/1006771.png"; }
   }
 
-  function getErrIcon(url) {
-    try {
-      const domain = new URL(url.startsWith('http') ? url : 'https://'+url).hostname;
-      return \`this.src='https://icons.duckduckgo.com/ip3/\${domain}.ico'\`;
-    } catch(e) { return ""; }
-  }
-
   function render() {
-    // 1. 渲染 Tabs
     const navHtml = DATA.map(c => 
       \`<div class="nav-item \${c.id === activeCatId ? 'active' : ''}" 
            onclick="isEditing ? openCatModal(\${c.id}) : switchCat(\${c.id})">
@@ -145,19 +130,16 @@ export function renderUI(data, config) {
     ).join('');
     document.getElementById('nav-list').innerHTML = navHtml;
 
-    // 2. 渲染 Grid
     const cat = DATA.find(c => c.id === activeCatId);
     const grid = document.getElementById('grid');
-    
-    if (isEditing) grid.classList.add('editing');
-    else grid.classList.remove('editing');
+    grid.className = isEditing ? 'grid editing' : 'grid';
 
     if (cat && cat.items) {
       grid.innerHTML = cat.items.map(item => \`
         <div style="position:relative">
           <a class="card" href="\${isEditing ? 'javascript:void(0)' : esc(item.url)}" 
              target="_blank" onclick="\${isEditing ? \`openLinkModal(\${item.id})\` : ''}">
-            <img src="\${getIcon(item.url)}" loading="lazy" onerror="\${getErrIcon(item.url)}">
+            <img src="\${getIcon(item.url)}" loading="lazy" onerror="this.src='https://icons.duckduckgo.com/ip3/google.com.ico'">
             <span>\${esc(item.title)}</span>
           </a>
           <div class="del-btn" onclick="delLink(\${item.id})"></div>
@@ -167,7 +149,7 @@ export function renderUI(data, config) {
       grid.innerHTML = '<div style="color:#666;text-align:center;grid-column:1/-1;margin-top:50px">空空如也</div>';
     }
 
-    // 3. 渲染 Dock (状态机)
+    // 渲染 Dock 按钮 (包含你要求的 √ 保存)
     const dock = document.getElementById('dock');
     if (isEditing) {
       dock.innerHTML = \`
@@ -180,41 +162,33 @@ export function renderUI(data, config) {
     }
   }
 
-  // --- 交互逻辑 ---
-
   function switchCat(id) { activeCatId = id; render(); }
   
   async function setEditMode(val) {
-    if (val) {
-      if (await checkAuth()) { isEditing = true; render(); }
-    } else {
-      isEditing = false; render();
-    }
+    if (val) { if (await checkAuth()) { isEditing = true; render(); } } 
+    else { isEditing = false; render(); }
   }
-
-  // --- Modals ---
 
   function openLinkModal(id) {
     editingId = id;
     const cat = DATA.find(c => c.id === activeCatId);
     
-    // 填充分类下拉框
+    // 填充下拉框
     const sel = document.getElementById('l-cat');
     sel.innerHTML = DATA.map(c => \`<option value="\${c.id}">\${esc(c.title)}</option>\`).join('');
-    sel.value = activeCatId;
-
+    
     if (id) {
-      // 修改模式
       const item = cat.items.find(i => i.id === id);
       document.getElementById('m-link-title').innerText = "修改链接";
       document.getElementById('l-name').value = item.title;
       document.getElementById('l-url').value = item.url;
-      sel.value = activeCatId; // 也可以支持移动分类
+      // [修复] 确保回显当前分类
+      sel.value = item.category_id;
     } else {
-      // 新增模式
       document.getElementById('m-link-title').innerText = "添加链接";
       document.getElementById('l-name').value = "";
       document.getElementById('l-url').value = "";
+      sel.value = activeCatId;
     }
     document.getElementById('m-link').style.display = 'flex';
   }
@@ -222,12 +196,11 @@ export function renderUI(data, config) {
   function openCatModal(id) {
     editingId = id;
     const btnDel = document.getElementById('btn-del-cat');
-    
     if (id) {
       const c = DATA.find(x => x.id === id);
       document.getElementById('m-cat-title').innerText = "修改分类";
       document.getElementById('c-name').value = c.title;
-      btnDel.style.display = 'block'; // 编辑时才显示删除
+      btnDel.style.display = 'block';
     } else {
       document.getElementById('m-cat-title').innerText = "新建分类";
       document.getElementById('c-name').value = "";
@@ -238,50 +211,38 @@ export function renderUI(data, config) {
 
   function closeM() { document.querySelectorAll('.modal-mask').forEach(e => e.style.display='none'); }
 
-  // --- API Actions ---
-
+  // API Actions
   async function saveLink() {
     const title = document.getElementById('l-name').value;
     let url = document.getElementById('l-url').value;
     const catId = document.getElementById('l-cat').value;
-
     if (!title || !url) return alert("请填写完整");
     if (!/^[a-zA-Z0-9.\+\-]+:/.test(url)) url = 'https://' + url;
 
-    const endpoint = editingId ? '/api/link' : '/api/link'; // URL一样，Method不一样
     const method = editingId ? 'PUT' : 'POST';
     const body = { id: editingId, title, url, category_id: catId };
-
-    if (await api(endpoint, method, body)) location.reload();
+    if (await api('/api/link', method, body)) location.reload();
   }
 
   async function delLink(id) {
-    if (confirm("确定删除?")) {
-      if (await api('/api/link', 'DELETE', { id })) {
-        // 简单处理：直接刷新保持状态比较麻烦，直接重载最稳
-        location.reload(); 
-      }
-    }
+    if (confirm("确定删除?")) { if (await api('/api/link', 'DELETE', { id })) location.reload(); }
   }
 
   async function saveCat() {
     const title = document.getElementById('c-name').value;
-    if (!title) return alert("写个名字吧");
-    
+    if (!title) return alert("名称不能为空");
     const method = editingId ? 'PUT' : 'POST';
     const body = { id: editingId, title };
-    
     if (await api('/api/category', method, body)) location.reload();
   }
 
   async function delCat() {
-    if (confirm("确定删除分类？(其下所有链接也会消失)")) {
+    if (confirm("确定删除分类？(其下链接也会消失)")) {
       if (await api('/api/category', 'DELETE', { id: editingId })) location.reload();
     }
   }
 
-  // --- Auth & Network ---
-
+  // Auth & Network
   function getPwd() { return localStorage.getItem('nav_pwd'); }
   async function checkAuth() {
     if(getPwd()) return true;
@@ -301,15 +262,12 @@ export function renderUI(data, config) {
     return true;
   }
 
-  // --- Search Logic ---
   document.getElementById('search').addEventListener('keydown', (e) => {
     if(e.key === 'Enter' && e.target.value) 
       window.open('https://www.google.com/search?q=' + encodeURIComponent(e.target.value));
   });
 
-  // Init
   render();
-
 </script>
 </body>
 </html>`;
