@@ -1,0 +1,24 @@
+{
+  "name": "cf-worker-nav",
+  "version": "1.0.0",
+  "description": "极简高性能 Cloudflare Worker + D1 导航页",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 migrations apply DB --local",
+    "db:prod": "wrangler d1 migrations apply DB --remote"
+  },
+  "keywords": [
+    "cloudflare",
+    "worker",
+    "d1",
+    "navigation"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.22.0"
+  }
+}
