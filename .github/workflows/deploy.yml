@@ -1,15 +1,44 @@
-name: Deploy Worker
+name: Deploy Worker & D1
+
 on:
   push:
     branches:
       - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    name: Deploy
     steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Cloudflare Workers
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 1. 初始化 Node 环境 (为了更稳定的安装依赖)
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 2. 安装依赖 (如果你的 package.json 里有东西)
+      - name: Install Dependencies
+        run: npm install
+
+      # ======================================================
+      # 3. [新增关键步骤] D1 数据库迁移
+      # 这一步会读取 migrations 文件夹里的 SQL 并在云端执行
+      # 注意：command 里的 "DB" 必须和你 wrangler.toml 里的 binding="DB" 名字一致
+      # ======================================================
+      - name: Apply D1 Migrations
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }} # 👈 显式指定账号 ID
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply DB --remote
+
+      # 4. 发布 Worker 代码 (和你原来一样)
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # 默认 command 就是 deploy，所以这里不用写
