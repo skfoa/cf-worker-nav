@@ -1,0 +1,22 @@
+# Cloudflare Worker生成的本地文件
+.wrangler/
+.dev.vars
+dist/
+worker.js
+
+# Node 依赖
+node_modules/
+package-lock.json
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.log
+
+# 环境变量 (防止本地测试密码泄露)
+.env
+.env.local
+
+# 如果你采用了“本地修改 wrangler.toml 填写真实ID”的开发方式，
+# 为了防止误传真实ID到 GitHub，你可以取消下面这行的注释：
+# wrangler.toml
