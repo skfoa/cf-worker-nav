@@ -1,36 +1,14 @@
-name: Deploy to Cloudflare Workers
-
+name: Deploy Worker
 on:
   push:
     branches:
       - main
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: Deploy
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Dependencies
-        run: npm install
-
-      # === 核心步骤：只处理 KV ID ===
-      # 因为 KV ID 属于“基础设施”，必须在部署前写入配置文件
-      - name: Configure KV ID
-        run: |
-          sed -i 's/REPLACE_WITH_YOUR_KV_ID/${{ secrets.KV_ID }}/g' wrangler.toml
-
-      # === 部署 ===
-      # 注意：这里不需要再传 vars 了，因为我们决定用 CF 后台的变量
-      - name: Deploy with Wrangler
+      - uses: actions/checkout@v4
+      - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
