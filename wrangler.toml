@@ -1,3 +1,8 @@
 name = "navigation"
 main = "worker.js"
 compatibility_date = "2025-12-26"
+
+# 如果用到了 KV，这里也要声明（但在控制台绑定更方便）
+# [[kv_namespaces]]
+# binding = "NAV_DB"
+# id = "你的KV_ID"
