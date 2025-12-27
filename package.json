@@ -1,10 +1,13 @@
 {
-  "name": "navigation",
-  "version": "1.0.0",
+  "name": "cf-worker-navigation",
+  "version": "1.1.0",
+  "description": "极简高性能的 Cloudflare Worker 导航页",
+  "main": "worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
   "devDependencies": {
     "wrangler": "^3.0.0"
-  },
-  "scripts": {
-    "deploy": "wrangler deploy"
   }
 }
