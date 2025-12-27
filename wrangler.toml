@@ -2,6 +2,4 @@ name = "navigation"
 main = "worker.js"
 compatibility_date = "2025-12-27"
 
-[[kv_namespaces]]
-binding = "KV"
-id = ""  # 保持为空，由部署者在 Cloudflare 控制台手动绑定
+
