@@ -1,5 +1,12 @@
-name = "navigation"
-main = "worker.js"
+name = "cf-worker-nav"
+main = "src/index.js"
 compatibility_date = "2025-12-27"
 
+# 绑定 D1 数据库
+[[d1_databases]]
+binding = "DB"
+database_name = "nav-db"
+database_id = "USER_MUST_FILL_THIS_ID" 
 
+[observability]
+enabled = true
