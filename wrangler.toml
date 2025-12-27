@@ -6,7 +6,7 @@ compatibility_date = "2025-12-27"
 [[d1_databases]]
 binding = "DB"
 database_name = "nav-db"
-database_id = "USER_MUST_FILL_THIS_ID" 
+database_id = "D1_ID_PLACEHOLDER"
 
 [observability]
 enabled = true
