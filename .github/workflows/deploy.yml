@@ -3,7 +3,7 @@ name: Deploy to Cloudflare Workers
 on:
   push:
     branches:
-      - main  # 当推送到 main 分支时触发
+      - main
 
 jobs:
   deploy:
@@ -21,9 +21,16 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      # === 核心步骤：只处理 KV ID ===
+      # 因为 KV ID 属于“基础设施”，必须在部署前写入配置文件
+      - name: Configure KV ID
+        run: |
+          sed -i 's/REPLACE_WITH_YOUR_KV_ID/${{ secrets.KV_ID }}/g' wrangler.toml
+
+      # === 部署 ===
+      # 注意：这里不需要再传 vars 了，因为我们决定用 CF 后台的变量
       - name: Deploy with Wrangler
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # 这一步会自动读取你的 wrangler.toml 并部署
