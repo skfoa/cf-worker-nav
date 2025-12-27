@@ -1,8 +1,13 @@
-name = "navigation"
+name = "my-navigation"
 main = "worker.js"
-compatibility_date = "2025-12-26"
+compatibility_date = "2025-12-27"
 
-# 如果用到了 KV，这里也要声明（但在控制台绑定更方便）
-# [[kv_namespaces]]
-# binding = "NAV_DB"
-# id = "你的KV_ID"
+# === KV 数据库绑定 (必填) ===
+# 对于开源项目，这里建议填一个明显的占位符
+# 部署时通过 GitHub Actions 替换成真实 ID
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_WITH_YOUR_KV_ID" 
+
+# 注意：这里删除了所有的 [vars] 区域
+# 标题、密码等配置，全部去 Cloudflare 后台填
