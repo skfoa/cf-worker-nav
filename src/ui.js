@@ -1,409 +1,286 @@
 /**
  * src/ui.js
- * 修复版：解决初始化顺序问题 & 增加空数据引导
+ * Server-Side Rendering (SSR) for Navigation & Admin Dashboard
+ * 包含：前台导航 + 后台管理 + 登录弹窗 + Tailwind CSS
  */
-export function renderUI(ssrData, ssrConfig) {
-  // 安全转义
-  const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
-  const safeJson = (obj) => JSON.stringify(obj).replace(/</g, "\\u003c");
+
+export function renderUI(navData, config) {
+  const { TITLE, BG_IMAGE } = config;
+  const safeData = JSON.stringify(navData).replace(/</g, '\\u003c');
+  const safeConfig = JSON.stringify(config).replace(/</g, '\\u003c');
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="scroll-smooth">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>${esc(ssrConfig.TITLE)}</title>
-<link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png">
-<style>
-  :root {
-    --glass: rgba(26, 26, 26, 0.85);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --accent: #3b82f6;
-    --danger: #ef4444;
-    --text-main: #f3f4f6;
-    --text-sub: #9ca3af;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: url('${esc(ssrConfig.BG_IMAGE)}') center/cover fixed no-repeat, #111;
-    color: var(--text-main); min-height: 100vh; padding-bottom: 100px;
-  }
-  body::before { content: ''; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: -1; backdrop-filter: blur(3px); }
-
-  /* Navbar */
-  .nav-header {
-    position: sticky; top: 0; z-index: 50;
-    background: rgba(18, 18, 18, 0.9); backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--glass-border);
-    padding-top: env(safe-area-inset-top);
-    min-height: 50px; display: flex; align-items: flex-end;
-  }
-  .nav-scroll {
-    display: flex; gap: 2px; padding: 0 10px; overflow-x: auto; width: 100%;
-    scrollbar-width: none;
-  }
-  .nav-item {
-    padding: 14px 16px; font-size: 15px; font-weight: 500; color: var(--text-sub);
-    white-space: nowrap; cursor: pointer; border-bottom: 2px solid transparent;
-    transition: 0.2s;
-  }
-  .nav-item.active { color: #fff; border-bottom-color: var(--accent); }
-  .nav-item.private::after { content: '🔒'; font-size: 10px; margin-left: 4px; opacity: 0.7; }
-
-  /* Search */
-  .search-container { margin: 24px auto; width: 90%; max-width: 500px; display: flex; flex-direction: column; gap: 10px; z-index: 10; position: relative; }
-  .search-engines { display: flex; justify-content: center; gap: 15px; font-size: 13px; color: var(--text-sub); }
-  .engine { cursor: pointer; transition: 0.2s; opacity: 0.6; padding: 5px; }
-  .engine.active { opacity: 1; color: var(--accent); font-weight: bold; }
-  .search-box {
-    display: flex; align-items: center; background: rgba(0,0,0,0.5);
-    border: 1px solid var(--glass-border); border-radius: 12px; transition: 0.3s;
-  }
-  .search-box:focus-within { background: rgba(0,0,0,0.8); border-color: var(--accent); }
-  .search-input { flex: 1; background: transparent; border: none; padding: 14px; color: #fff; font-size: 16px; outline: none; }
-
-  /* Grid */
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 16px; padding: 16px; max-width: 1000px; margin: 0 auto; }
-  .card-wrapper { position: relative; }
-  .card {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px;
-    padding: 16px 10px; text-decoration: none; color: var(--text-main); height: 105px;
-    backdrop-filter: blur(10px); transition: transform 0.2s;
-  }
-  .card:hover { transform: translateY(-4px); background: rgba(60,60,60,0.9); }
-  .card img { width: 40px; height: 40px; margin-bottom: 10px; border-radius: 10px; object-fit: cover; background: rgba(255,255,255,0.1); }
-  .card span { font-size: 13px; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  
-  /* Edit Controls */
-  .editing .card { border: 1px dashed #fbbf24; animation: shake 0.3s infinite alternate; cursor: grab; }
-  .edit-btn, .del-btn { position: absolute; top: -6px; width: 22px; height: 22px; border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 12px; z-index: 5; cursor: pointer; border: 2px solid #fff; color: #fff; }
-  .edit-btn { right: -6px; background: var(--accent); }
-  .del-btn { left: -6px; background: var(--danger); }
-  .editing .edit-btn, .editing .del-btn { display: flex; }
-  @keyframes shake { from { transform: rotate(-1deg); } to { transform: rotate(1deg); } }
-
-  /* Dock */
-  .dock {
-    position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
-    background: rgba(20,20,20,0.95); padding: 12px 24px; border-radius: 100px;
-    display: flex; gap: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.6);
-    border: 1px solid var(--glass-border); z-index: 100;
-  }
-  .dock-btn { font-size: 22px; cursor: pointer; transition: 0.2s; opacity: 0.8; }
-  .dock-btn:hover { transform: scale(1.2); opacity: 1; }
-  .dock-btn.active { color: var(--accent); opacity: 1; }
-
-  /* Modal */
-  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(5px); }
-  .modal { background: #1c1c1e; width: 85%; max-width: 360px; padding: 24px; border-radius: 20px; border: 1px solid #333; box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
-  .modal h3 { margin-bottom: 20px; color: #fff; }
-  input, select { width: 100%; padding: 12px; margin-bottom: 10px; background: #2c2c2e; border: 1px solid #3a3a3c; border-radius: 10px; color: #fff; outline: none; }
-  .checkbox-group { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-sub); margin: 5px 0 15px; }
-  .checkbox-group input { width: auto; }
-  .btn-group { display: flex; gap: 10px; }
-  .btn { flex: 1; padding: 12px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-ghost { background: #3a3a3c; color: #ccc; }
-</style>
-</head>
-<body>
-
-<header class="nav-header"><div class="nav-scroll" id="nav-tabs"></div></header>
-
-<div class="search-container">
-  <div class="search-engines">
-    <div class="engine active" data-url="https://www.google.com/search?q=">Google</div>
-    <div class="engine" data-url="https://cn.bing.com/search?q=">Bing</div>
-    <div class="engine" data-url="https://www.baidu.com/s?wd=">Baidu</div>
-    <div class="engine" data-url="https://github.com/search?q=">GitHub</div>
-  </div>
-  <div class="search-box">
-    <input class="search-input" id="search-input" placeholder="Search..." autocomplete="off">
-  </div>
-</div>
-
-<main class="grid" id="main-grid"></main>
-
-<div class="dock">
-  <div class="dock-btn" onclick="toggleEdit()" id="btn-edit">⚙️</div>
-  <div class="dock-btn" onclick="openModal('link')">➕</div>
-  <div class="dock-btn" onclick="openModal('settings')">🔧</div>
-  <div class="dock-btn" onclick="doLogout()" style="color:var(--danger);display:none" id="btn-logout">🚪</div>
-</div>
-
-<!-- Modals -->
-<div class="modal-mask" id="m-form"><div class="modal">
-  <h3 id="m-title">添加</h3>
-  <input type="hidden" id="f-id">
-  <input id="f-title" placeholder="名称">
-  <div id="f-link-opts">
-    <input id="f-url" placeholder="网址 (https://...)">
-    <input id="f-desc" placeholder="描述 (可选)">
-    <input id="f-icon" placeholder="图标 URL (可选)">
-    <select id="f-cat"></select>
-  </div>
-  <div class="checkbox-group"><input type="checkbox" id="f-private"><label for="f-private">私有 (Private)</label></div>
-  <div class="btn-group">
-    <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-    <button class="btn btn-primary" onclick="submitForm()">保存</button>
-  </div>
-  <div style="margin-top:15px;text-align:center" id="btn-sw-cat">
-    <span style="font-size:12px;color:#666;cursor:pointer" onclick="switchToCatMode()">切换到“新建分类”</span>
-  </div>
-</div></div>
-
-<div class="modal-mask" id="m-auth"><div class="modal">
-  <h3>管理员认证</h3>
-  <input type="password" id="auth-pwd" placeholder="输入密码">
-  <div class="btn-group"><button class="btn btn-primary" onclick="doLogin()">进入后台</button></div>
-</div></div>
-
-<div class="modal-mask" id="m-settings"><div class="modal">
-  <h3>系统设置</h3>
-  <p style="font-size:12px;color:#888;margin-bottom:10px">全局配置 (Root Only)</p>
-  <input id="set-title" placeholder="网站标题">
-  <input id="set-bg" placeholder="背景图片 URL">
-  <div class="btn-group"><button class="btn btn-ghost" onclick="closeModal()">关闭</button><button class="btn btn-primary" onclick="saveSysConfig()">保存</button></div>
-</div></div>
-
-<script>
-const state = {
-  data: ${safeJson(ssrData)},
-  currentCatId: 0,
-  auth: localStorage.getItem('nav_auth') || '',
-  isRoot: false,
-  isEditing: false,
-  searchUrl: 'https://www.google.com/search?q='
-};
-
-// 核心修复：按安全顺序初始化
-async function init() {
-  // 1. 先绑定事件，保证按钮能点
-  setupSearch();
-  setupDragDrop();
-
-  // 2. 设置初始分类 ID
-  if (state.data && state.data.length > 0) {
-    state.currentCatId = state.data[0].id;
-  }
-
-  // 3. 渲染 UI (即使为空也要渲染)
-  renderTabs();
-  renderGrid();
-
-  // 4. 后台认证与数据刷新 (放在最后，防止网络错误阻断 UI)
-  if (state.auth) {
-    try {
-      const res = await api('/api/auth/verify');
-      if (res.status === 'ok') {
-        state.isRoot = res.role === 'root';
-        document.getElementById('btn-logout').style.display = 'flex';
-        // 尝试刷新数据，如果 DB 报错则 catch 住
-        await refreshData().catch(e => console.warn("DB Refresh failed:", e));
-      } else {
-        doLogout();
-      }
-    } catch(e) { console.log('Auth check failed:', e); }
-  }
-}
-
-function renderTabs() {
-  const list = state.data || [];
-  const html = list.map(c => \`
-    <div class="nav-item \${c.id === state.currentCatId ? 'active' : ''} \${c.is_private ? 'private' : ''}" 
-         onclick="switchCat(\${c.id})" ondblclick="editCat(\${c.id})">
-      \${esc(c.title)}
-    </div>\`).join('');
-  document.getElementById('nav-tabs').innerHTML = html + (state.auth ? '<div class="nav-item" onclick="openModal(\\'cat_new\\')">+</div>' : '');
-}
-
-function renderGrid() {
-  const grid = document.getElementById('main-grid');
-  // 空状态处理
-  if (!state.data || state.data.length === 0) {
-    grid.innerHTML = \`<div style="grid-column:1/-1;text-align:center;padding:40px;opacity:0.6;">
-      <h3>👋 欢迎使用</h3>
-      <p style="font-size:13px;margin:10px 0">数据库暂无数据</p>
-      \${state.auth ? '<button class="btn btn-primary" onclick="openModal(\\'cat_new\\')" style="max-width:120px">新建分类</button>' : '<small>请先点击下方设置登录</small>'}
-    </div>\`;
-    return;
-  }
-
-  const cat = state.data.find(c => c.id === state.currentCatId);
-  if (!cat) return; // Should not happen
-
-  grid.innerHTML = cat.items.map(item => {
-    let icon = item.icon;
-    const domain = new URL(item.url).hostname;
-    if (!icon) icon = \`https://api.iowen.cn/favicon/\${domain}.png\`;
-    
-    return \`
-    <div class="card-wrapper" draggable="\${state.isEditing}" data-id="\${item.id}">
-      <a class="card" href="\${esc(item.url)}" target="_blank" onclick="\${state.isEditing?'return false':''}">
-        <img src="\${icon}" loading="lazy" onerror="this.src='https://icons.duckduckgo.com/ip3/\${domain}.ico'">
-        <span>\${esc(item.title)}</span>
-      </a>
-      <div class="edit-btn" onclick="editLink(\${item.id})">✎</div>
-      <div class="del-btn" onclick="delLink(\${item.id})">✕</div>
-    </div>\`;
-  }).join('');
-  grid.classList.toggle('editing', state.isEditing);
-}
-
-function setupSearch() {
-  document.querySelectorAll('.engine').forEach(el => {
-    el.addEventListener('click', () => {
-      document.querySelectorAll('.engine').forEach(e => e.classList.remove('active'));
-      el.classList.add('active');
-      state.searchUrl = el.dataset.url;
-    });
-  });
-  document.getElementById('search-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.value) window.open(state.searchUrl + encodeURIComponent(e.target.value));
-  });
-}
-
-// Interactions
-function switchCat(id) { state.currentCatId = id; renderTabs(); renderGrid(); }
-function toggleEdit() { if(checkAuth()) { state.isEditing = !state.isEditing; document.getElementById('btn-edit').classList.toggle('active', state.isEditing); renderGrid(); } }
-function checkAuth() { if(state.auth) return true; document.getElementById('m-auth').style.display='flex'; return false; }
-function closeModal() { document.querySelectorAll('.modal-mask').forEach(e => e.style.display='none'); }
-
-// API
-async function api(path, body) {
-  const res = await fetch(path, {
-    method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', 'Authorization': state.auth },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if(res.status===401) { doLogout(); throw new Error("401"); }
-  return res.json();
-}
-async function refreshData() {
-  const res = await api('/api/data');
-  if (res.nav) { state.data = res.nav; renderTabs(); renderGrid(); }
-}
-
-// Login/Logout
-async function doLogin() {
-  const pwd = document.getElementById('auth-pwd').value;
-  if(!pwd) return;
-  state.auth = pwd;
-  try {
-    const res = await api('/api/auth/verify');
-    if(res.status==='ok') {
-      localStorage.setItem('nav_auth', pwd);
-      location.reload(); 
-    } else alert("密码错误");
-  } catch(e) { alert("登录失败"); }
-}
-function doLogout() { localStorage.removeItem('nav_auth'); location.reload(); }
-
-// Forms
-let formMode = 'link';
-let editId = null;
-
-function openModal(type) {
-  if(!checkAuth()) return;
-  closeModal();
-  document.getElementById('f-id').value = '';
-  document.getElementById('f-title').value = '';
-  editId = null;
-
-  if(type==='settings') {
-    if(!state.isRoot) return alert("需要 Root 权限");
-    document.getElementById('m-settings').style.display='flex';
-    document.getElementById('set-title').value = document.title;
-    return;
-  }
-  
-  if(type==='cat_new') switchToCatMode();
-  else switchToLinkMode();
-  document.getElementById('m-form').style.display='flex';
-}
-
-function switchToLinkMode() {
-  formMode = 'link';
-  document.getElementById('m-title').innerText = '添加链接';
-  document.getElementById('f-link-opts').style.display='block';
-  document.getElementById('btn-sw-cat').style.display='block';
-  
-  const sel = document.getElementById('f-cat');
-  // 如果没有分类，强制切换到分类模式
-  if (!state.data || state.data.length === 0) {
-    switchToCatMode();
-    document.getElementById('btn-sw-cat').style.display='none'; // 没法切回链接模式
-    return;
-  }
-  sel.innerHTML = state.data.map(c => \`<option value="\${c.id}">\${esc(c.title)}</option>\`).join('');
-  sel.value = state.currentCatId || (state.data[0] && state.data[0].id);
-}
-
-function switchToCatMode() {
-  formMode = 'cat';
-  document.getElementById('m-title').innerText = '新建分类';
-  document.getElementById('f-link-opts').style.display='none';
-  document.getElementById('btn-sw-cat').style.display='block';
-}
-
-async function submitForm() {
-  const title = document.getElementById('f-title').value;
-  if(!title) return alert("标题必填");
-  const is_private = document.getElementById('f-private').checked ? 1 : 0;
-  
-  try {
-    if(formMode === 'link') {
-      const url = document.getElementById('f-url').value;
-      if(!url) return alert("网址必填");
-      const payload = { 
-        title, url, is_private, 
-        category_id: document.getElementById('f-cat').value,
-        icon: document.getElementById('f-icon').value
-      };
-      await api(editId ? '/api/link/update' : '/api/link', { id: editId, ...payload });
-    } else {
-      await api(editId ? '/api/category/update' : '/api/category', { id: editId, title, is_private });
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${TITLE}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: { primary: '#3b82f6', dark: '#0f172a' } } }
     }
-    closeModal();
-    await refreshData();
-  } catch(e) { alert("保存失败: " + e.message); }
-}
+  </script>
+  <style>
+    /* 自定义滚动条 & 玻璃拟态 */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+    .card-hover { transition: all 0.3s ease; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 20px -10px rgba(0,0,0,0.5); border-color: #3b82f6; }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans selection:bg-blue-500 selection:text-white"
+      style="${BG_IMAGE ? `background-image: linear-gradient(to bottom, rgba(17,24,39,0.9), rgba(17,24,39,0.95)), url('${BG_IMAGE}'); background-size: cover; background-attachment: fixed;` : ''}">
 
-function editLink(id) {
-  const cat = state.data.find(c => c.id === state.currentCatId);
-  const item = cat.items.find(i => i.id === id);
-  openModal('link');
-  editId = id;
-  document.getElementById('m-title').innerText = '编辑链接';
-  document.getElementById('f-title').value = item.title;
-  document.getElementById('f-url').value = item.url;
-  document.getElementById('f-icon').value = item.icon || '';
-  document.getElementById('f-cat').value = item.category_id;
-  document.getElementById('f-private').checked = !!item.is_private;
-}
+  <!-- 1. 顶部导航栏 -->
+  <nav class="fixed top-0 w-full z-50 glass border-b-0 border-white/5">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-bold text-white">N</div>
+          <span class="font-bold text-xl tracking-tight">${TITLE}</span>
+        </div>
+        <div class="flex items-center gap-4">
+          <button onclick="toggleLogin()" class="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
 
-function editCat(id) {
-  if(!state.auth) return;
-  const cat = state.data.find(c => c.id === id);
-  openModal('cat_new');
-  editId = id;
-  document.getElementById('m-title').innerText = '编辑分类';
-  document.getElementById('f-title').value = cat.title;
-  document.getElementById('f-private').checked = !!cat.is_private;
-}
+  <!-- 2. 主内容区 -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-12">
+    <!-- 搜索框 -->
+    <div class="max-w-2xl mx-auto mb-12">
+      <div class="relative group">
+        <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-75 transition duration-1000"></div>
+        <div class="relative">
+          <input type="text" id="searchInput" placeholder="Search anything..." 
+                 class="w-full bg-gray-900/90 text-white border border-gray-700 rounded-xl px-5 py-4 pl-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 placeholder-gray-500 shadow-xl"
+                 onkeyup="filterLinks()">
+          <svg class="absolute left-4 top-4.5 w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </div>
+      </div>
+    </div>
 
-async function delLink(id) { if(confirm('删除?')) { await api('/api/link/delete', {id}); refreshData(); } }
-async function saveSysConfig() {
-  await api('/api/config', { key: 'title', value: document.getElementById('set-title').value });
-  await api('/api/config', { key: 'bg_image', value: document.getElementById('set-bg').value });
-  location.reload();
-}
-function setupDragDrop() {} // 简版保留占位，防报错
+    <!-- 链接分类列表 -->
+    <div id="content-area" class="space-y-12">
+      <!-- JS 渲染内容将注入这里 -->
+    </div>
+  </main>
 
-init();
-</script>
+  <!-- 3. 后台管理面板 (默认隐藏) -->
+  <div id="admin-panel" class="fixed inset-0 z-50 bg-gray-900/95 backdrop-blur-sm hidden overflow-y-auto">
+    <div class="max-w-4xl mx-auto p-6 min-h-screen flex flex-col justify-center">
+      <div class="bg-gray-800 rounded-2xl border border-gray-700 shadow-2xl p-8">
+        <div class="flex justify-between items-center mb-8">
+          <h2 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">Manage Navigation</h2>
+          <div class="flex gap-3">
+             <button onclick="logout()" class="px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded-lg transition">Logout</button>
+             <button onclick="toggleLogin()" class="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg hover:bg-gray-700 transition">Close</button>
+          </div>
+        </div>
+
+        <!-- 登录表单 -->
+        <div id="login-form" class="max-w-sm mx-auto space-y-4 py-10">
+          <div class="text-center mb-4 text-gray-400">Enter Admin Password</div>
+          <input type="password" id="password" class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 focus:outline-none" placeholder="Password">
+          <button onclick="doLogin()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition shadow-lg shadow-blue-500/30">Login</button>
+        </div>
+
+        <!-- 管理界面 (登录后显示) -->
+        <div id="dashboard" class="hidden space-y-8">
+          <!-- 添加链接 -->
+          <div class="p-6 bg-gray-900/50 rounded-xl border border-gray-700/50">
+            <h3 class="text-lg font-semibold mb-4 text-blue-400">Add New Link</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <select id="new-cat" class="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white"></select>
+              <input id="new-title" placeholder="Title" class="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white">
+              <input id="new-url" placeholder="URL (https://...)" class="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white md:col-span-2">
+              <input id="new-desc" placeholder="Description (Optional)" class="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white md:col-span-2">
+            </div>
+            <div class="mt-4 flex justify-end">
+              <button onclick="addLink()" class="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg font-medium transition">Add Link</button>
+            </div>
+          </div>
+          
+          <!-- 添加分类 -->
+          <div class="p-6 bg-gray-900/50 rounded-xl border border-gray-700/50 flex gap-4 items-center">
+             <input id="new-cat-title" placeholder="New Category Name" class="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white">
+             <button onclick="addCategory()" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium whitespace-nowrap">Add Category</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 客户端逻辑 -->
+  <script>
+    const INITIAL_DATA = ${safeData};
+    const CONFIG = ${safeConfig};
+    let token = localStorage.getItem('nav_token') || '';
+    
+    // 初始化渲染
+    function init() {
+      renderContent(INITIAL_DATA);
+      if(token) checkAuth();
+    }
+
+    // 渲染卡片列表
+    function renderContent(data) {
+      const container = document.getElementById('content-area');
+      container.innerHTML = data.map(cat => {
+        if(!cat.items || cat.items.length === 0) return '';
+        return \`
+          <div class="category-section">
+            <div class="flex items-center gap-3 mb-6 px-2">
+              <h2 class="text-xl font-bold text-gray-200">\${cat.title}</h2>
+              <div class="h-px flex-1 bg-gradient-to-r from-gray-700 to-transparent"></div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              \${cat.items.map(link => \`
+                <a href="\${link.url}" target="_blank" rel="noopener" class="group block p-4 bg-gray-800/40 hover:bg-gray-800/80 border border-gray-700/50 rounded-xl card-hover relative overflow-hidden">
+                  <div class="flex items-start gap-4 relative z-10">
+                    \${link.icon ? \`<img src="\${link.icon}" class="w-10 h-10 rounded-lg object-contain bg-gray-900/50 p-1">\` : \`
+                    <div class="w-10 h-10 rounded-lg bg-gray-700/50 flex items-center justify-center text-lg">\${link.title.charAt(0)}</div>\`}
+                    <div class="flex-1 min-w-0">
+                      <h3 class="font-medium text-gray-200 group-hover:text-blue-400 truncate transition-colors">\${link.title}</h3>
+                      <p class="text-sm text-gray-500 truncate mt-1">\${link.description || extractDomain(link.url)}</p>
+                    </div>
+                  </div>
+                </a>
+              \`).join('')}
+            </div>
+          </div>
+        \`;
+      }).join('');
+    }
+
+    // 辅助：提取域名
+    function extractDomain(url) {
+      try { return new URL(url).hostname; } catch { return url; }
+    }
+
+    // 搜索功能
+    function filterLinks() {
+      const q = document.getElementById('searchInput').value.toLowerCase();
+      if(!q) return renderContent(INITIAL_DATA);
+      
+      const filtered = INITIAL_DATA.map(cat => ({
+        ...cat,
+        items: cat.items.filter(item => 
+          item.title.toLowerCase().includes(q) || 
+          (item.description && item.description.toLowerCase().includes(q)) ||
+          item.url.toLowerCase().includes(q)
+        )
+      })).filter(cat => cat.items.length > 0);
+      
+      renderContent(filtered);
+    }
+
+    // --- 后台管理逻辑 ---
+
+    function toggleLogin() {
+      const panel = document.getElementById('admin-panel');
+      panel.classList.toggle('hidden');
+      if(token && !panel.classList.contains('hidden')) loadAdminData();
+    }
+
+    async function doLogin() {
+      const pwd = document.getElementById('password').value;
+      // 简单请求测试
+      const res = await apiCall('/api/auth/verify', 'POST', {}, pwd);
+      if(res.status === 'ok') {
+        token = pwd; // 简单模式直接用密码当 Token
+        localStorage.setItem('nav_token', token);
+        document.getElementById('login-form').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
+        loadAdminData();
+      } else {
+        alert('Invalid Password');
+      }
+    }
+
+    function logout() {
+      token = '';
+      localStorage.removeItem('nav_token');
+      location.reload();
+    }
+
+    function checkAuth() {
+      apiCall('/api/auth/verify', 'POST').then(res => {
+        if(res.status === 'ok') {
+          document.getElementById('login-form').classList.add('hidden');
+          document.getElementById('dashboard').classList.remove('hidden');
+        } else {
+          logout();
+        }
+      });
+    }
+
+    async function loadAdminData() {
+      // 刷新分类下拉框
+      const res = await apiCall('/api/data'); // 获取全部数据(含私有)
+      if(!res.nav) return;
+      const select = document.getElementById('new-cat');
+      select.innerHTML = res.nav.map(c => \`<option value="\${c.id}">\${c.title}</option>\`).join('');
+    }
+
+    async function addLink() {
+      const body = {
+        category_id: parseInt(document.getElementById('new-cat').value),
+        title: document.getElementById('new-title').value,
+        url: document.getElementById('new-url').value,
+        description: document.getElementById('new-desc').value
+      };
+      if(!body.title || !body.url) return alert('Title and URL required');
+      
+      const res = await apiCall('/api/link', 'POST', body);
+      if(res.success !== false) {
+        alert('Link Added!');
+        location.reload(); // 简单粗暴刷新页面
+      } else {
+        alert('Error: ' + res.error);
+      }
+    }
+
+    async function addCategory() {
+      const title = document.getElementById('new-cat-title').value;
+      if(!title) return;
+      const res = await apiCall('/api/category', 'POST', { title });
+      if(res.success !== false) {
+        alert('Category Added!');
+        loadAdminData();
+        document.getElementById('new-cat-title').value = '';
+      }
+    }
+
+    // 通用 API 调用
+    async function apiCall(path, method = 'GET', body = null, tempToken = null) {
+      const headers = { 
+        'Authorization': 'Bearer ' + (tempToken || token),
+        'Content-Type': 'application/json'
+      };
+      const opts = { method, headers };
+      if(body) opts.body = JSON.stringify(body);
+      
+      try {
+        const res = await fetch(path, opts);
+        if(res.status === 401) { logout(); return { error: 'Unauthorized' }; }
+        return await res.json();
+      } catch(e) {
+        console.error(e);
+        return { error: e.message };
+      }
+    }
+
+    // 启动
+    init();
+  </script>
 </body>
 </html>`;
 }
