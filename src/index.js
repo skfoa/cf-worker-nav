@@ -19,7 +19,7 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Max-Age': '86400', 
+  'Access-Control-Max-Age': '86400',
 };
 
 function json(data, status = 200) {
@@ -42,10 +42,10 @@ export default {
 
     const url = new URL(request.url);
     // 🛠️ 修复：移除路径末尾的斜杠，防止 '/api/data/' 匹配失败
-    const path = url.pathname.endsWith('/') && url.pathname.length > 1 
-      ? url.pathname.slice(0, -1) 
+    const path = url.pathname.endsWith('/') && url.pathname.length > 1
+      ? url.pathname.slice(0, -1)
       : url.pathname;
-    
+
     const method = request.method;
     const dao = new DAO(env.DB);
 
@@ -61,11 +61,11 @@ export default {
     // ==========================================
     const authHeader = request.headers.get("Authorization");
     let token = "";
-    
+
     // 🛠️ 修复：自动提取 'Bearer ' 后的 Token
     if (authHeader) {
-      token = authHeader.startsWith("Bearer ") 
-        ? authHeader.slice(7).trim() 
+      token = authHeader.startsWith("Bearer ")
+        ? authHeader.slice(7).trim()
         : authHeader.trim();
     }
 
@@ -74,12 +74,12 @@ export default {
     if (env.PASSWORD && token) {
       isRoot = safeCompare(token, env.PASSWORD);
     }
-    
+
     // Level 2: User 身份 (API 用户)
     let isUser = isRoot;
     if (!isRoot && token) {
-       // 如果密码不对，再查库看看是不是普通 Token
-       isUser = await dao.validateToken(token);
+      // 如果密码不对，再查库看看是不是普通 Token
+      isUser = await dao.validateToken(token);
     }
 
     // ==========================================
@@ -90,9 +90,9 @@ export default {
     if (path === '/manifest.json') {
       let title = env.TITLE || "Nav";
       try {
-         const config = await dao.getConfigs();
-         if (config.title) title = config.title;
-      } catch(e) {} 
+        const config = await dao.getConfigs();
+        if (config.title) title = config.title;
+      } catch (e) { }
 
       return new Response(JSON.stringify({
         name: title,
@@ -137,7 +137,7 @@ export default {
           `<!DOCTYPE html><html><body style="background:#111;color:#fff;font-family:sans-serif;padding:2rem;">
            <h1>🚧 System Error</h1>
            <p>${e.message}</p>
-           </body></html>`, 
+           </body></html>`,
           { status: 500, headers: { "content-type": "text/html" } }
         );
       }
@@ -146,9 +146,9 @@ export default {
     // ==========================================
     // 5. 保护接口 (Protected API Routes)
     // ==========================================
-    
+
     if (path.startsWith('/api/')) {
-      
+
       // 🔒 鉴权拦截
       if (!isUser) {
         return json({ error: "Unauthorized" }, 401);
@@ -162,10 +162,10 @@ export default {
         // A. 基础状态
         // ------------------------------------
         if (path === '/api/auth/verify') {
-          return json({ 
-            status: 'ok', 
+          return json({
+            status: 'ok',
             role: isRoot ? 'root' : 'user',
-            timestamp: Date.now() 
+            timestamp: Date.now()
           });
         }
 
@@ -173,26 +173,26 @@ export default {
         // B. Root 专属操作
         // ------------------------------------
         const rootEndpoints = [
-          '/api/import', 
-          '/api/export', 
+          '/api/import',
+          '/api/export',
           // '/api/config', // 注意：GET 是公开的，POST 需要 Root，下面单独判断
-          '/api/token/create', 
+          '/api/token/create',
           '/api/token/delete'
         ];
 
         // 检查 Root 权限
         if (!isRoot) {
-           // 如果是 POST /api/config，必须 Root
-           if (path === '/api/config' && method === 'POST') return errorResp("Root privilege required", 403);
-           // 如果在黑名单里，拒绝
-           if (rootEndpoints.includes(path)) return errorResp("Root privilege required", 403);
+          // 如果是 POST /api/config，必须 Root
+          if (path === '/api/config' && method === 'POST') return errorResp("Root privilege required", 403);
+          // 如果在黑名单里，拒绝
+          if (rootEndpoints.includes(path)) return errorResp("Root privilege required", 403);
         }
 
         // Root 功能路由
         if (path === '/api/import') return json(await dao.importData(body));
-        
+
         if (path === '/api/export') {
-          const allData = await dao.getAllData(true); 
+          const allData = await dao.getAllData(true);
           const exportData = allData.nav.map(cat => ({
             category: cat.title,
             is_private: cat.is_private,
@@ -200,15 +200,16 @@ export default {
               title: link.title,
               url: link.url,
               description: link.description,
-              icon: link.icon
+              icon: link.icon,
+              is_private: link.is_private
             }))
           }));
           return json({ meta: { version: 1, date: new Date().toISOString() }, data: exportData });
         }
 
         if (path === '/api/config' && method === 'POST') {
-           await dao.updateConfig(body.key, body.value);
-           return json({ status: 'ok', key: body.key, value: body.value });
+          await dao.updateConfig(body.key, body.value);
+          return json({ status: 'ok', key: body.key, value: body.value });
         }
         if (path === '/api/token/create') return json(await dao.createToken(body.name));
         if (path === '/api/token/delete') return json(await dao.deleteToken(body.id));
@@ -216,7 +217,7 @@ export default {
         // ------------------------------------
         // C. 普通数据操作 (CRUD) - User & Root 均可
         // ------------------------------------
-        
+
         // [GET] 获取全量数据 (后台模式)
         if (path === '/api/data') return json(await dao.getAllData(true));
 
