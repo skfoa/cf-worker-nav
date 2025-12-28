@@ -1,7 +1,6 @@
 /**
  * src/db.js
- * D1 Database Access Object (DAO)
- * v5.0 Audit Fixes - Performance Optimized Import & Strict Consistency
+ * v6.0 Fixed: 修复 Link 隐私字段写入遗漏 & 增强 SQL 过滤逻辑
  */
 export class DAO {
   constructor(db) {
@@ -31,16 +30,21 @@ export class DAO {
     const config = await this.getConfigs();
 
     // 2. 动态构建查询
+    // 未登录时，分类必须是非私有的 (is_private=0 或 null)
     const catSql = isLogin 
       ? "SELECT * FROM categories ORDER BY sort_order ASC, id ASC"
-      : "SELECT * FROM categories WHERE is_private = 0 ORDER BY sort_order ASC, id ASC";
+      : "SELECT * FROM categories WHERE COALESCE(is_private, 0) = 0 ORDER BY sort_order ASC, id ASC";
 
-    // 🔒 深度防御：未登录时，使用 INNER JOIN 确保只查出公开分类下的链接
+    // 🔒 深度防御 & 修复核心 Bug：
+    // 未登录时，使用 INNER JOIN 确保：
+    // 1. 分类是公开的 (c.is_private = 0)
+    // 2. 链接本身也是公开的 (l.is_private = 0)
     const linksSql = isLogin
       ? "SELECT * FROM links ORDER BY sort_order ASC, id ASC"
       : `SELECT l.* FROM links l 
          INNER JOIN categories c ON l.category_id = c.id 
-         WHERE c.is_private = 0 
+         WHERE COALESCE(c.is_private, 0) = 0 
+           AND COALESCE(l.is_private, 0) = 0
          ORDER BY l.sort_order ASC, l.id ASC`;
 
     // 3. 并行查询
@@ -97,7 +101,7 @@ export class DAO {
     return await this.db.prepare(
       `INSERT INTO categories (title, sort_order, is_private, created_at, updated_at) 
        VALUES (?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories), ?, ?, ?)`
-    ).bind(title, is_private, this._now(), this._now()).run();
+    ).bind(title, Number(is_private), this._now(), this._now()).run();
   }
 
   async updateCategory({ id, title, is_private }) {
@@ -107,7 +111,7 @@ export class DAO {
     let sql = "UPDATE categories SET updated_at = ?";
     const args = [this._now()];
     if (title !== undefined) { sql += ", title = ?"; args.push(title); }
-    if (is_private !== undefined) { sql += ", is_private = ?"; args.push(is_private); }
+    if (is_private !== undefined) { sql += ", is_private = ?"; args.push(Number(is_private)); }
     sql += " WHERE id = ?";
     args.push(id);
     return await this.db.prepare(sql).bind(...args).run();
@@ -129,16 +133,17 @@ export class DAO {
   // 链接管理 (Link CRUD)
   // ===========================================
 
-  async addLink({ category_id, title, url, icon = "", description = "" }) {
+  async addLink({ category_id, title, url, icon = "", description = "", is_private = 0 }) {
+    // 🛠️ 修复：写入时包含 is_private 字段
     return await this.db.prepare(
-      `INSERT INTO links (category_id, title, url, description, icon, sort_order, created_at, updated_at) 
-       VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM links WHERE category_id = ?), ?, ?)`
-    ).bind(category_id, title, url, description, icon, category_id, this._now(), this._now()).run();
+      `INSERT INTO links (category_id, title, url, description, icon, is_private, sort_order, created_at, updated_at) 
+       VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM links WHERE category_id = ?), ?, ?)`
+    ).bind(category_id, title, url, description, icon, Number(is_private), category_id, this._now(), this._now()).run();
   }
 
-  async updateLink({ id, category_id, title, url, description, icon }) {
+  async updateLink({ id, category_id, title, url, description, icon, is_private }) {
     if (category_id === undefined && title === undefined && url === undefined && 
-        description === undefined && icon === undefined) {
+        description === undefined && icon === undefined && is_private === undefined) {
         return { success: true, meta: { changes: 0 } };
     }
     let sql = "UPDATE links SET updated_at = ?";
@@ -148,6 +153,9 @@ export class DAO {
     if (url !== undefined) { sql += ", url = ?"; args.push(url); }
     if (description !== undefined) { sql += ", description = ?"; args.push(description); }
     if (icon !== undefined) { sql += ", icon = ?"; args.push(icon); }
+    // 🛠️ 修复：更新时包含 is_private 字段
+    if (is_private !== undefined) { sql += ", is_private = ?"; args.push(Number(is_private)); }
+    
     sql += " WHERE id = ?";
     args.push(id);
     return await this.db.prepare(sql).bind(...args).run();
@@ -202,16 +210,6 @@ export class DAO {
   // 批量导入 (Optimized Batch Import)
   // ===========================================
   
-  /**
-   * 🚀 优化版批量导入
-   * 策略：
-   * 1. 预读所有现有分类 Map (避免 N+1 查询)
-   * 2. 批量插入缺失的分类
-   * 3. 刷新分类 Map
-   * 4. 批量插入所有链接
-   * 
-   * @param {Array} data - [{category: "Dev", items: [...]}]
-   */
   async importData(data) {
     if (!Array.isArray(data)) throw new Error("Invalid format: Root must be an array");
     
@@ -228,9 +226,10 @@ export class DAO {
 
     for (const group of data) {
       const catTitle = group.category || group.title;
+      // 默认导入分类为公开 (is_private=0)
       if (catTitle && !catMap.has(catTitle) && !newCatNames.has(catTitle)) {
         newCatStmts.push(
-          this.db.prepare("INSERT INTO categories (title, created_at, updated_at) VALUES (?, ?, ?)")
+          this.db.prepare("INSERT INTO categories (title, is_private, created_at, updated_at) VALUES (?, 0, ?, ?)")
           .bind(catTitle, now, now)
         );
         newCatNames.add(catTitle);
@@ -241,8 +240,7 @@ export class DAO {
       // 执行批量插入新分类
       await this.db.batch(newCatStmts);
       
-      // 3. 重新获取完整 Map (为了拿到新插入分类的 ID)
-      // 虽然多了一次读操作，但保证了 ID 的绝对正确性，且比 N 次 Select 快得多
+      // 3. 重新获取完整 Map
       existingCats = await this.db.prepare("SELECT id, title FROM categories").all();
       (existingCats.results || []).forEach(c => catMap.set(c.title, c.id));
     }
@@ -255,15 +253,16 @@ export class DAO {
 
       if (catId && Array.isArray(group.items)) {
         for (const item of group.items) {
+           // 🛠️ 修复：导入时显式设置 is_private = 0 (公开)
            linkStmts.push(this.db.prepare(
-             `INSERT INTO links (category_id, title, url, description, icon, created_at, updated_at) 
-              VALUES (?, ?, ?, ?, ?, ?, ?)`
+             `INSERT INTO links (category_id, title, url, description, icon, is_private, created_at, updated_at) 
+              VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
            ).bind(catId, item.name||item.title, item.url, item.description||'', item.icon||'', now, now));
         }
       }
     }
 
-    // 5. 分片执行链接插入 (D1 Batch 限制通常为 100 条)
+    // 5. 分片执行链接插入
     if (linkStmts.length > 0) {
       const CHUNK_SIZE = 50; 
       for (let i = 0; i < linkStmts.length; i += CHUNK_SIZE) {
