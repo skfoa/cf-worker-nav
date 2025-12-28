@@ -6,8 +6,9 @@ export function renderUI(ssrData, ssrConfig) {
   const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#039;' }[m]));
 
   // 注入服务端数据
+  // 注意：ssrData 本身就是 nav 数组，不需要再访问 .nav
   const safeState = JSON.stringify({
-    data: ssrData.nav || [],
+    data: ssrData || [],
     config: ssrConfig,
     auth: '',
     isRoot: false
