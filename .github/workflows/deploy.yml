@@ -41,11 +41,15 @@ jobs:
 
       # ======================================================
       # 3. 部署 Worker
-      # (这里不再上传 secrets，直接使用你在 Cloudflare 后台配置好的变量)
       # ======================================================
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # 注意：删除了 secrets 和 env 字段
+                    # 【新增】告诉 Wrangler 上传这个机密变量
+          secrets: |
+            PASSWORD
+        env:
+          # 【新增】将 GitHub 仓库里的 PASSWORD 值传递给 Wrangler
+          PASSWORD: ${{ secrets.PASSWORD }}
