@@ -1,7 +1,7 @@
 /**
  * src/db.js
  * D1 Database Access Object (DAO)
- * v3.0 Final - Security, Atomicity & Consistency
+ * v5.0 Audit Fixes - Performance Optimized Import & Strict Consistency
  */
 export class DAO {
   constructor(db) {
@@ -14,7 +14,6 @@ export class DAO {
 
   /**
    * 辅助方法：计算 SHA-256 哈希
-   * 使用 Web Crypto API，适用于 Cloudflare Workers 环境
    */
   async _hash(input) {
     const msgBuffer = new TextEncoder().encode(input);
@@ -23,17 +22,13 @@ export class DAO {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  /**
-   * 核心：获取首页所需的所有数据
-   * 🔒 安全特性：在 SQL 层过滤私有数据，防止脏数据进入内存
-   */
+  // ===========================================
+  // 核心查询 (Core Query)
+  // ===========================================
+
   async getAllData(isLogin = false) {
     // 1. 获取系统配置
-    const configRes = await this.db.prepare("SELECT key, value FROM configs").all();
-    const config = (configRes.results || []).reduce((acc, cur) => {
-      acc[cur.key] = cur.value;
-      return acc;
-    }, {});
+    const config = await this.getConfigs();
 
     // 2. 动态构建查询
     const catSql = isLogin 
@@ -48,7 +43,7 @@ export class DAO {
          WHERE c.is_private = 0 
          ORDER BY l.sort_order ASC, l.id ASC`;
 
-    // 3. 并行查询 (减少 Round-trip)
+    // 3. 并行查询
     const [catsData, linksData] = await Promise.all([
       this.db.prepare(catSql).all(),
       this.db.prepare(linksSql).all()
@@ -57,7 +52,7 @@ export class DAO {
     const categories = catsData.results || [];
     const links = linksData.results || [];
 
-    // 4. 组装数据 (Category -> Items)
+    // 4. 组装数据
     const nav = categories.map(cat => ({
       ...cat,
       items: links.filter(l => l.category_id === cat.id)
@@ -67,39 +62,26 @@ export class DAO {
   }
 
   // ===========================================
-  // Token 管理 (仅存 Hash)
+  // Token 管理 (Token Management)
   // ===========================================
   
-  /**
-   * 验证 Token
-   * @param {string} inputToken - 用户传入的明文 Token
-   */
   async validateToken(inputToken) {
     if (!inputToken) return false;
     const inputHash = await this._hash(inputToken);
-    // 查库比对哈希
     const res = await this.db.prepare("SELECT 1 FROM tokens WHERE token_hash = ?").bind(inputHash).first();
     return !!res;
   }
 
-  /**
-   * 创建 Token
-   * @returns {Object} { id, token, name } - 注意：token 明文只返回这一次
-   */
   async createToken(name) {
-    // 生成随机 32 字节 Hex 字符串 (64 chars)
     const randomBuffer = new Uint8Array(32);
     crypto.getRandomValues(randomBuffer);
     const token = Array.from(randomBuffer).map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    // 计算哈希并存储
     const tokenHash = await this._hash(token);
 
     const res = await this.db.prepare(
       "INSERT INTO tokens (name, token_hash, created_at) VALUES (?, ?, ?)"
     ).bind(name, tokenHash, this._now()).run();
 
-    // 返回明文给前端展示（仅此一次），数据库存 Hash
     return { id: res.meta.last_row_id, name, token };
   }
 
@@ -108,11 +90,10 @@ export class DAO {
   }
 
   // ===========================================
-  // 分类管理 (Categories)
+  // 分类管理 (Category CRUD)
   // ===========================================
 
   async addCategory({ title, is_private = 0 }) {
-    // ⚛️ 原子性：使用 SQL 子查询解决 sort_order 竞态条件
     return await this.db.prepare(
       `INSERT INTO categories (title, sort_order, is_private, created_at, updated_at) 
        VALUES (?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories), ?, ?, ?)`
@@ -120,24 +101,19 @@ export class DAO {
   }
 
   async updateCategory({ id, title, is_private }) {
-    // 🛠️ 修复：返回一致的空操作对象，避免 TypeError
     if (title === undefined && is_private === undefined) {
       return { success: true, meta: { changes: 0 } };
     }
-
     let sql = "UPDATE categories SET updated_at = ?";
     const args = [this._now()];
-    
     if (title !== undefined) { sql += ", title = ?"; args.push(title); }
     if (is_private !== undefined) { sql += ", is_private = ?"; args.push(is_private); }
-    
     sql += " WHERE id = ?";
     args.push(id);
     return await this.db.prepare(sql).bind(...args).run();
   }
 
   async deleteCategory(id) {
-    // 级联删除由外键保证
     return await this.db.prepare("DELETE FROM categories WHERE id = ?").bind(id).run();
   }
 
@@ -150,11 +126,10 @@ export class DAO {
   }
 
   // ===========================================
-  // 链接管理 (Links)
+  // 链接管理 (Link CRUD)
   // ===========================================
 
   async addLink({ category_id, title, url, icon = "", description = "" }) {
-    // ⚛️ 原子性：同分类下 Max(sort_order) + 1
     return await this.db.prepare(
       `INSERT INTO links (category_id, title, url, description, icon, sort_order, created_at, updated_at) 
        VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM links WHERE category_id = ?), ?, ?)`
@@ -162,21 +137,17 @@ export class DAO {
   }
 
   async updateLink({ id, category_id, title, url, description, icon }) {
-    // 🛠️ 修复：返回一致的空操作对象
     if (category_id === undefined && title === undefined && url === undefined && 
         description === undefined && icon === undefined) {
         return { success: true, meta: { changes: 0 } };
     }
-
     let sql = "UPDATE links SET updated_at = ?";
     const args = [this._now()];
-
     if (category_id !== undefined) { sql += ", category_id = ?"; args.push(category_id); }
     if (title !== undefined) { sql += ", title = ?"; args.push(title); }
     if (url !== undefined) { sql += ", url = ?"; args.push(url); }
     if (description !== undefined) { sql += ", description = ?"; args.push(description); }
     if (icon !== undefined) { sql += ", icon = ?"; args.push(icon); }
-
     sql += " WHERE id = ?";
     args.push(id);
     return await this.db.prepare(sql).bind(...args).run();
@@ -190,11 +161,9 @@ export class DAO {
     if (!items?.length) return { success: true, meta: { changes: 0 } };
     const stmts = items.map(item => {
       if (item.category_id !== undefined) {
-        // 跨分类拖拽
         return this.db.prepare("UPDATE links SET sort_order = ?, category_id = ? WHERE id = ?")
           .bind(item.sort_order, item.category_id, item.id);
       } else {
-        // 同分类排序
         return this.db.prepare("UPDATE links SET sort_order = ? WHERE id = ?")
           .bind(item.sort_order, item.id);
       }
@@ -203,12 +172,105 @@ export class DAO {
   }
 
   // ===========================================
-  // 配置更新 (Configs)
+  // 系统配置 (Configs & Stats)
   // ===========================================
+
+  async getConfigs() {
+    const res = await this.db.prepare("SELECT key, value FROM configs").all();
+    return (res.results || []).reduce((acc, cur) => {
+      acc[cur.key] = cur.value;
+      return acc;
+    }, {});
+  }
+
   async updateConfig(key, value) {
     return await this.db.prepare(
       `INSERT INTO configs (key, value, updated_at) VALUES (?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`
     ).bind(key, value, this._now()).run();
+  }
+
+  async getStats() {
+    const [c, l] = await Promise.all([
+      this.db.prepare("SELECT COUNT(*) as count FROM categories").first(),
+      this.db.prepare("SELECT COUNT(*) as count FROM links").first()
+    ]);
+    return { categories: c.count, links: l.count, db_latency: "low" };
+  }
+
+  // ===========================================
+  // 批量导入 (Optimized Batch Import)
+  // ===========================================
+  
+  /**
+   * 🚀 优化版批量导入
+   * 策略：
+   * 1. 预读所有现有分类 Map (避免 N+1 查询)
+   * 2. 批量插入缺失的分类
+   * 3. 刷新分类 Map
+   * 4. 批量插入所有链接
+   * 
+   * @param {Array} data - [{category: "Dev", items: [...]}]
+   */
+  async importData(data) {
+    if (!Array.isArray(data)) throw new Error("Invalid format: Root must be an array");
+    
+    const now = this._now();
+
+    // 1. 预读取现有分类 (Title -> ID)
+    let existingCats = await this.db.prepare("SELECT id, title FROM categories").all();
+    const catMap = new Map();
+    (existingCats.results || []).forEach(c => catMap.set(c.title, c.id));
+
+    // 2. 识别并批量插入新分类
+    const newCatStmts = [];
+    const newCatNames = new Set();
+
+    for (const group of data) {
+      const catTitle = group.category || group.title;
+      if (catTitle && !catMap.has(catTitle) && !newCatNames.has(catTitle)) {
+        newCatStmts.push(
+          this.db.prepare("INSERT INTO categories (title, created_at, updated_at) VALUES (?, ?, ?)")
+          .bind(catTitle, now, now)
+        );
+        newCatNames.add(catTitle);
+      }
+    }
+
+    if (newCatStmts.length > 0) {
+      // 执行批量插入新分类
+      await this.db.batch(newCatStmts);
+      
+      // 3. 重新获取完整 Map (为了拿到新插入分类的 ID)
+      // 虽然多了一次读操作，但保证了 ID 的绝对正确性，且比 N 次 Select 快得多
+      existingCats = await this.db.prepare("SELECT id, title FROM categories").all();
+      (existingCats.results || []).forEach(c => catMap.set(c.title, c.id));
+    }
+
+    // 4. 构建所有链接的插入语句
+    const linkStmts = [];
+    for (const group of data) {
+      const catTitle = group.category || group.title;
+      const catId = catMap.get(catTitle);
+
+      if (catId && Array.isArray(group.items)) {
+        for (const item of group.items) {
+           linkStmts.push(this.db.prepare(
+             `INSERT INTO links (category_id, title, url, description, icon, created_at, updated_at) 
+              VALUES (?, ?, ?, ?, ?, ?, ?)`
+           ).bind(catId, item.name||item.title, item.url, item.description||'', item.icon||'', now, now));
+        }
+      }
+    }
+
+    // 5. 分片执行链接插入 (D1 Batch 限制通常为 100 条)
+    if (linkStmts.length > 0) {
+      const CHUNK_SIZE = 50; 
+      for (let i = 0; i < linkStmts.length; i += CHUNK_SIZE) {
+        await this.db.batch(linkStmts.slice(i, i + CHUNK_SIZE));
+      }
+    }
+    
+    return { success: true, count: linkStmts.length, categories_added: newCatStmts.length };
   }
 }
