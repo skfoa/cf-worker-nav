@@ -22,17 +22,16 @@ jobs:
         run: npm install
 
       # ======================================================
-      # [新增步骤] 动态注入 D1 Database ID
-      # 这会将 wrangler.toml 里的 "D1_ID_PLACEHOLDER" 替换为真实 ID
+      # 1. 动态注入 D1 Database ID
+      # 将 wrangler.toml 里的 "D1_ID_PLACEHOLDER" 替换为 Secrets 里的真实 ID
       # ======================================================
       - name: Inject D1 ID
         run: |
           sed -i 's/D1_ID_PLACEHOLDER/${{ secrets.CLOUDFLARE_D1_ID }}/g' wrangler.toml
 
-      # 检查一下文件内容 (为了调试，生产环境可以去掉 cat)
-      # 注意：不要 cat 打印出来，否则 ID 就显示在日志里了，这里只做替换即可
-
-      # 数据库迁移
+      # ======================================================
+      # 2. 数据库迁移 (创建表/更新结构)
+      # ======================================================
       - name: Apply D1 Migrations
         uses: cloudflare/wrangler-action@v3
         with:
@@ -40,9 +39,21 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: d1 migrations apply DB --remote
 
-      # 部署
+      # ======================================================
+      # 3. 部署 Worker (核心修复部分)
+      # ======================================================
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # 关键修复：必须明确告诉 Wrangler 哪些 Secrets 需要上传到 Cloudflare
+          secrets: |
+            PASSWORD
+            TITLE
+            BG_IMAGE
+        env:
+          # 将 GitHub 仓库里的 Secrets 映射给 Wrangler
+          PASSWORD: ${{ secrets.PASSWORD }}
+          TITLE: ${{ secrets.TITLE }}
+          BG_IMAGE: ${{ secrets.BG_IMAGE }}
