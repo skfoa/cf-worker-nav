@@ -798,6 +798,7 @@ function openCatModal(id, e) {
     document.getElementById('m-cat-title').innerText = "新建分类";
     document.getElementById('c-id').value = '';
     document.getElementById('c-title').value = '';
+    document.getElementById('c-private').checked = false; // 重置私有选项
   }
 }
 
