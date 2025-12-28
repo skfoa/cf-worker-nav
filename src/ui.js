@@ -1,21 +1,17 @@
 /**
  * src/ui.js
- * 🚀 最终完整开发者版 (v3.0)
- * - 包含完整的注释，适合开源维护
- * - 逻辑完全展开，不再压缩代码
- * - 包含：站内搜索、拖拽排序、分类编辑、导入导出、空状态引导
+ * 修复版 v3.1 (Fix Syntax Error in importData)
  */
 export function renderUI(ssrData, ssrConfig) {
-  // 1. 安全转义工具 (防止 XSS)
+  // 1. 安全转义工具
   const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
   
   // 2. 将服务端数据安全注入前端
-  // 这里使用 replace 是为了防止 JSON 中包含 </script> 导致截断
   const safeState = JSON.stringify({
     data: ssrData.nav || [],
     config: ssrConfig,
-    auth: '',       // 前端 Token 暂存
-    isRoot: false   // 权限标记
+    auth: '',       
+    isRoot: false   
   }).replace(/</g, "\\u003c");
 
   return `<!DOCTYPE html>
@@ -26,14 +22,11 @@ export function renderUI(ssrData, ssrConfig) {
 <title>${esc(ssrConfig.TITLE)}</title>
 <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png">
 <style>
-  /* =========================================
-     1. 全局变量与基础样式
-     ========================================= */
   :root {
     --glass-bg: rgba(30, 30, 30, 0.65);
     --glass-border: rgba(255, 255, 255, 0.12);
-    --accent: #3b82f6;      /* 主色调：蓝 */
-    --danger: #ef4444;      /* 危险色：红 */
+    --accent: #3b82f6;      
+    --danger: #ef4444;      
     --text-main: #ffffff;
     --text-sub: #94a3b8;
     --radius: 16px;
@@ -47,22 +40,19 @@ export function renderUI(ssrData, ssrConfig) {
     background: url('${esc(ssrConfig.BG_IMAGE)}') center/cover fixed no-repeat, #0f172a;
     color: var(--text-main);
     min-height: 100vh;
-    padding-bottom: 120px; /* 给底部 Dock 留位置 */
+    padding-bottom: 120px; 
   }
 
-  /* 背景遮罩：确保壁纸太亮时文字依然清晰 */
   body::before {
     content: ''; position: fixed; inset: 0; 
     background: rgba(15, 23, 42, 0.4); 
-    z-index: -1; backdrop-filter: blur(0px); /* 可选：开启模糊会降低性能但更好看 */
+    z-index: -1; backdrop-filter: blur(0px); 
   }
 
-  /* =========================================
-     2. 顶部导航栏 (Categories)
-     ========================================= */
+  /* 导航栏 */
   .nav-header {
     position: sticky; top: 0; z-index: 50;
-    min-height: 64px; /* 防止无数据时塌陷 */
+    min-height: 64px; 
     background: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 60%, rgba(0,0,0,0) 100%);
     padding-top: max(12px, env(safe-area-inset-top));
     padding-bottom: 16px;
@@ -75,7 +65,6 @@ export function renderUI(ssrData, ssrConfig) {
     max-width: 1200px; width: 100%;
   }
   
-  /* 移动端左对齐，防止居中导致首个元素不可见 */
   @media (max-width: 768px) { .nav-header { justify-content: flex-start; } }
 
   .nav-item {
@@ -95,19 +84,16 @@ export function renderUI(ssrData, ssrConfig) {
     border-bottom-color: var(--accent);
   }
 
-  /* 私有分类锁图标 */
   .nav-item.private::before {
     content: '🔒'; font-size: 10px; 
     vertical-align: super; margin-right: 4px; opacity: 0.8;
   }
 
-  /* 空状态提示 */
   .nav-empty-tip {
     color: rgba(255,255,255,0.4); font-size: 14px;
     margin: auto; pointer-events: none;
   }
 
-  /* 编辑模式下的分类按钮 (删除/修改) */
   .nav-item .cat-btn {
     display: none; position: absolute; top: -10px;
     width: 18px; height: 18px; border-radius: 50%;
@@ -126,9 +112,7 @@ export function renderUI(ssrData, ssrConfig) {
   }
   .editing .nav-item .cat-btn { display: flex; }
 
-  /* =========================================
-     3. 搜索区域
-     ========================================= */
+  /* 搜索框 */
   .search-wrap {
     max-width: 680px; margin: 40px auto 30px; padding: 0 20px;
     display: flex; flex-direction: column; gap: 16px;
@@ -174,9 +158,7 @@ export function renderUI(ssrData, ssrConfig) {
     outline: none; height: 100%;
   }
 
-  /* =========================================
-     4. 卡片网格布局
-     ========================================= */
+  /* 网格布局 */
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -221,7 +203,6 @@ export function renderUI(ssrData, ssrConfig) {
     text-shadow: 0 2px 4px rgba(0,0,0,0.5);
   }
 
-  /* 拖拽态样式 */
   .editing .card {
     cursor: move; border: 1px dashed var(--accent);
     animation: shake 0.3s infinite alternate;
@@ -229,7 +210,6 @@ export function renderUI(ssrData, ssrConfig) {
   .dragging { opacity: 0.4; transform: scale(0.9); }
   @keyframes shake { from { transform: rotate(-0.5deg); } to { transform: rotate(0.5deg); } }
 
-  /* 链接编辑/删除按钮 */
   .btn-edit-link, .btn-del-link {
     position: absolute; width: 28px; height: 28px;
     border-radius: 50%; z-index: 10; cursor: pointer;
@@ -242,9 +222,7 @@ export function renderUI(ssrData, ssrConfig) {
   .btn-del-link { top: -10px; left: -10px; background: var(--danger); }
   .editing .btn-edit-link, .editing .btn-del-link { display: flex; }
 
-  /* =========================================
-     5. 底部 Dock 与 Footer
-     ========================================= */
+  /* 底部 Dock */
   .footer {
     text-align: center; margin-top: 60px;
     color: rgba(255,255,255,0.3); font-size: 12px;
@@ -271,7 +249,6 @@ export function renderUI(ssrData, ssrConfig) {
   .dock-item:hover { opacity: 1; transform: scale(1.2) translateY(-5px); }
   .dock-item.active { color: var(--accent); opacity: 1; }
   
-  /* Tooltip (简单实现) */
   .dock-item::after {
     content: attr(title); position: absolute; bottom: 100%; left: 50%;
     transform: translateX(-50%) translateY(-10px);
@@ -281,9 +258,7 @@ export function renderUI(ssrData, ssrConfig) {
   }
   .dock-item:hover::after { opacity: 1; transform: translateX(-50%) translateY(-15px); }
 
-  /* =========================================
-     6. 弹窗 (Modals)
-     ========================================= */
+  /* 弹窗 */
   .modal-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.85);
     z-index: 200; display: none;
@@ -331,12 +306,10 @@ export function renderUI(ssrData, ssrConfig) {
 </head>
 <body>
 
-<!-- 1. 顶部导航 -->
 <nav class="nav-header">
   <div class="nav-scroll" id="nav-list"></div>
 </nav>
 
-<!-- 2. 搜索框 -->
 <div class="search-wrap">
   <div class="search-engines">
     <div class="engine active" data-type="google" onclick="setEngine(this)">Google</div>
@@ -350,15 +323,12 @@ export function renderUI(ssrData, ssrConfig) {
   </div>
 </div>
 
-<!-- 3. 内容网格 -->
 <main class="grid" id="grid"></main>
 
-<!-- 4. 底部信息 -->
 <div class="footer">
   <p>Copyright © 2025 Nav-Item | Powered by <a href="https://github.com/skfoa/cf-worker-nav" target="_blank">Cloudflare Worker</a></p>
 </div>
 
-<!-- 5. 底部 Dock -->
 <div class="dock">
   <div class="dock-item" onclick="toggleEditMode()" id="btn-edit" title="布局编辑">⚙️</div>
   <div class="dock-item" onclick="openLinkModal()" title="添加链接">➕</div>
@@ -369,7 +339,6 @@ export function renderUI(ssrData, ssrConfig) {
 
 <!-- ================= Modals ================= -->
 
-<!-- 链接编辑弹窗 -->
 <div class="modal-overlay" id="m-link"><div class="modal">
   <h3 id="m-link-title">添加链接</h3>
   <input type="hidden" id="l-id">
@@ -390,7 +359,6 @@ export function renderUI(ssrData, ssrConfig) {
   </div>
 </div></div>
 
-<!-- 分类编辑弹窗 -->
 <div class="modal-overlay" id="m-cat"><div class="modal">
   <h3 id="m-cat-title">分类管理</h3>
   <input type="hidden" id="c-id">
@@ -404,14 +372,12 @@ export function renderUI(ssrData, ssrConfig) {
   </div>
 </div></div>
 
-<!-- 登录弹窗 -->
 <div class="modal-overlay" id="m-auth"><div class="modal">
   <h3>管理员登录</h3>
   <div class="form-group"><input type="password" id="auth-pwd" placeholder="输入后台密码"></div>
   <div class="btn-row"><button class="btn btn-primary" onclick="doLogin()">登录</button></div>
 </div></div>
 
-<!-- 设置弹窗 -->
 <div class="modal-overlay" id="m-set"><div class="modal">
   <h3>全局设置</h3>
   <div class="form-group">
@@ -428,7 +394,6 @@ export function renderUI(ssrData, ssrConfig) {
     <button class="btn btn-primary" onclick="saveConfig()">保存设置</button>
   </div>
   
-  <!-- 备份恢复区 -->
   <div style="margin-top:24px; padding-top:20px; border-top:1px solid #334155;">
     <p style="font-size:12px; color:#666; margin-bottom:10px">数据备份与恢复</p>
     <div style="display:flex; gap:10px">
@@ -440,23 +405,15 @@ export function renderUI(ssrData, ssrConfig) {
 </div></div>
 
 <script>
-/**
- * ==========================================
- *  核心逻辑 (Core Logic)
- * ==========================================
- */
-
-// 1. 初始化状态
 const APP = ${safeState};
 const STATE = {
-  activeCatId: 0,   // 当前选中的分类ID
-  isEditing: false, // 是否处于编辑模式
+  activeCatId: 0,   
+  isEditing: false, 
   searchType: 'google',
   searchUrl: 'https://www.google.com/search?q=',
-  dragSrcEl: null   // 拖拽源元素
+  dragSrcEl: null   
 };
 
-// 搜索引擎配置
 const ENGINES = {
   google: { url: 'https://www.google.com/search?q=', place: 'Google 搜索...' },
   baidu:  { url: 'https://www.baidu.com/s?wd=', place: '百度一下...' },
@@ -465,23 +422,18 @@ const ENGINES = {
   site:   { url: '', place: '输入关键词筛选本站链接...' }
 };
 
-// 2. 启动函数
 (async function init() {
-  // 读取本地 Token
   const localToken = localStorage.getItem('nav_token');
   if (localToken) APP.auth = localToken;
 
-  // 设置默认分类
   if (APP.data && APP.data.length > 0) {
     STATE.activeCatId = APP.data[0].id;
   }
 
-  // 渲染界面
   renderNav();
   renderGrid();
   setupSearch();
 
-  // 后台验权 (静默)
   if (APP.auth) {
     try {
       const res = await api('/api/auth/verify');
@@ -489,22 +441,15 @@ const ENGINES = {
         APP.isRoot = (res.role === 'root');
         document.getElementById('btn-logout').style.display = 'flex';
       } else {
-        doLogout(); // Token 失效
+        doLogout(); 
       }
     } catch (e) { console.warn("Auth check failed"); }
   }
 })();
 
-/**
- * ==========================================
- *  渲染函数 (Render Functions)
- * ==========================================
- */
-
 function renderNav() {
   const list = document.getElementById('nav-list');
   
-  // 空状态处理
   if (!APP.data || APP.data.length === 0) {
     list.innerHTML = '<span class="nav-empty-tip">暂无分类，请点击底部 📁 添加</span>';
     return;
@@ -516,13 +461,11 @@ function renderNav() {
          data-id="\${cat.id}"
          onclick="switchCat(\${cat.id})">
       \${esc(cat.title)}
-      <!-- 编辑模式按钮 -->
       <div class="cat-btn cat-del" onclick="deleteCat(\${cat.id}, event)" title="删除分类">✕</div>
       <div class="cat-btn cat-edit" onclick="openCatModal(\${cat.id}, event)" title="修改分类">✎</div>
     </div>
   \`).join('');
 
-  // 仅在编辑模式下绑定拖拽
   if (STATE.isEditing) setupDrag('nav-item', handleCatDrop);
 }
 
@@ -530,13 +473,11 @@ function renderGrid(customItems = null) {
   const grid = document.getElementById('grid');
   let items = customItems;
 
-  // 如果没有自定义数据（搜索结果），则显示当前分类
   if (!items) {
     const cat = APP.data.find(c => c.id === STATE.activeCatId);
     if (cat) items = cat.items;
   }
 
-  // 网格空状态
   if (!items || items.length === 0) {
     const msg = customItems 
       ? '未找到匹配的链接' 
@@ -550,7 +491,6 @@ function renderGrid(customItems = null) {
   }
 
   grid.innerHTML = items.map(item => {
-    // 自动获取图标逻辑
     const domain = new URL(item.url).hostname;
     const fallback = \`https://icons.duckduckgo.com/ip3/\${domain}.ico\`;
     const icon = item.icon || \`https://api.iowen.cn/favicon/\${domain}.png\`;
@@ -561,34 +501,24 @@ function renderGrid(customItems = null) {
         <img src="\${icon}" loading="lazy" onerror="this.src='\${fallback}'">
         <span>\${esc(item.title)}</span>
       </a>
-      <!-- 编辑模式按钮 -->
       <div class="btn-edit-link" onclick="openLinkModal(\${item.id})">✎</div>
       <div class="btn-del-link" onclick="deleteLink(\${item.id})">✕</div>
     </div>\`;
   }).join('');
 
-  // 搜索结果不允许拖拽排序
   if (STATE.isEditing && !customItems) setupDrag('card-wrap', handleLinkDrop);
 }
-
-/**
- * ==========================================
- *  搜索逻辑 (Search Logic)
- * ==========================================
- */
 
 function setupSearch() {
   const input = document.getElementById('search-input');
   
-  // 实时输入监听 (用于站内搜索)
   input.addEventListener('input', (e) => {
     if (STATE.searchType === 'site') {
       const val = e.target.value.trim().toLowerCase();
       if (!val) {
-        renderGrid(); // 这里的空参表示恢复显示当前分类
+        renderGrid(); 
         return;
       }
-      // 全局遍历搜索
       const results = [];
       APP.data.forEach(cat => {
         cat.items.forEach(link => {
@@ -601,7 +531,6 @@ function setupSearch() {
     }
   });
 
-  // 回车监听 (用于外部引擎)
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && input.value && STATE.searchType !== 'site') {
       window.open(STATE.searchUrl + encodeURIComponent(input.value));
@@ -611,30 +540,20 @@ function setupSearch() {
 }
 
 function setEngine(el) {
-  // UI 切换
   document.querySelectorAll('.engine').forEach(e => e.classList.remove('active'));
   el.classList.add('active');
   
-  // 状态更新
   STATE.searchType = el.dataset.type;
   const conf = ENGINES[STATE.searchType];
   STATE.searchUrl = conf.url;
   
-  // 输入框更新
   const input = document.getElementById('search-input');
   input.placeholder = conf.place;
   input.value = '';
   input.focus();
   
-  // 恢复网格视图
   renderGrid();
 }
-
-/**
- * ==========================================
- *  拖拽排序逻辑 (Drag & Drop)
- * ==========================================
- */
 
 function setupDrag(className, dropHandler) {
   const els = document.querySelectorAll('.' + className);
@@ -664,21 +583,17 @@ function setupDrag(className, dropHandler) {
   });
 }
 
-// 分类排序
 async function handleCatDrop(src, target) {
   const srcIdx = APP.data.findIndex(c => c.id == src.dataset.id);
   const targetIdx = APP.data.findIndex(c => c.id == target.dataset.id);
   
-  // 移动数组元素
   const [removed] = APP.data.splice(srcIdx, 1);
   APP.data.splice(targetIdx, 0, removed);
   
   renderNav();
-  // 保存到服务器
   await api('/api/category/reorder', APP.data.map((c, i) => ({ id: c.id, sort_order: i })));
 }
 
-// 链接排序
 async function handleLinkDrop(src, target) {
   const cat = APP.data.find(c => c.id === STATE.activeCatId);
   const srcIdx = cat.items.findIndex(i => i.id == src.dataset.id);
@@ -688,15 +603,8 @@ async function handleLinkDrop(src, target) {
   cat.items.splice(targetIdx, 0, removed);
   
   renderGrid();
-  // 保存到服务器
   await api('/api/link/reorder', cat.items.map((i, idx) => ({ id: i.id, sort_order: idx })));
 }
-
-/**
- * ==========================================
- *  交互与 API 封装 (Interactions)
- * ==========================================
- */
 
 function switchCat(id) {
   STATE.activeCatId = id;
@@ -723,7 +631,6 @@ function closeModals() {
   document.querySelectorAll('.modal-overlay').forEach(e => e.style.display = 'none');
 }
 
-// 通用 API 请求函数
 async function api(path, body) {
   const headers = { 
     'Content-Type': 'application/json',
@@ -743,7 +650,6 @@ async function api(path, body) {
   return res.json();
 }
 
-// 刷新本地数据
 async function refreshData() {
   try {
     const res = await api('/api/data');
@@ -755,13 +661,6 @@ async function refreshData() {
   } catch(e) { console.error("Refresh failed", e); }
 }
 
-/**
- * ==========================================
- *  表单逻辑 (Forms & CRUD)
- * ==========================================
- */
-
-// 登录/退出
 async function doLogin() {
   const pwd = document.getElementById('auth-pwd').value;
   if (!pwd) return;
@@ -782,7 +681,6 @@ function doLogout() {
   location.reload();
 }
 
-// 链接操作
 function openLinkModal(id) {
   if (!checkAuth()) return;
   closeModals();
@@ -839,9 +737,8 @@ async function deleteLink(id) {
   }
 }
 
-// 分类操作
 function openCatModal(id, e) {
-  if (e) e.stopPropagation(); // 防止点击后切换分类
+  if (e) e.stopPropagation(); 
   if (!checkAuth()) return;
   closeModals();
   document.getElementById('m-cat').style.display = 'flex';
@@ -882,7 +779,6 @@ async function deleteCat(id, e) {
   }
 }
 
-// 系统设置
 function openSettings() {
   if (!checkAuth()) return;
   if (!APP.isRoot) return alert("需要 Root 权限");
@@ -906,6 +802,7 @@ async function exportData() {
   a.click();
 }
 
+// 修复点：移除了容易引起歧义的模板字符串嵌套，改用安全的单引号连接
 async function importData(input) {
   const file = input.files[0];
   if (!file) return;
@@ -916,10 +813,11 @@ async function importData(input) {
       const json = JSON.parse(e.target.result);
       if (!Array.isArray(json)) throw new Error("JSON 格式错误: 根节点必须是数组");
       
-      if (!confirm(\`确认导入 \${json.length} 个分类？这将合并现有数据。\ `)) return;
+      // Fix: 使用普通字符串拼接，避免 ESBuild 解析模板字符串嵌套时出错
+      if (!confirm('确认导入 ' + json.length + ' 个分类？这将合并现有数据。')) return;
       
       const res = await api('/api/import', json);
-      alert(\`导入成功！\n新增分类: \${res.categories_added}\n新增链接: \${res.count}\`);
+      alert('导入成功！\\n新增分类: ' + res.categories_added + '\\n新增链接: ' + res.count);
       location.reload();
     } catch (err) {
       alert("导入失败: " + err.message);
@@ -928,7 +826,6 @@ async function importData(input) {
   reader.readAsText(file);
 }
 
-// 辅助转义函数
 function esc(s) {
   return s ? s.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : '';
 }
