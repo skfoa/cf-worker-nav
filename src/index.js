@@ -5,8 +5,7 @@ import { renderUI } from './ui.js';
 // 1. 安全工具与全局配置
 // ==============================================
 
-// 防时序攻击的字符串比对函数
-// 即使长度不同或内容错误，也消耗恒定的时间（近似），防止攻击者通过响应时间猜测密码长度或内容
+// 防时序攻击的字符串比对
 function safeCompare(a, b) {
   if (!a || !b || a.length !== b.length) return false;
   let result = 0;
@@ -16,7 +15,6 @@ function safeCompare(a, b) {
   return result === 0;
 }
 
-// 增强的 CORS 头，包含 Max-Age 缓存预检结果 24 小时
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -24,7 +22,6 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400', 
 };
 
-// 统一 JSON 响应
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -32,46 +29,57 @@ function json(data, status = 200) {
   });
 }
 
-// 统一错误响应
 function errorResp(msg, status = 500) {
   return json({ error: msg, success: false }, status);
 }
 
 export default {
   async fetch(request, env) {
+    // 0. 数据库绑定检查 (防止本地开发未配置导致崩溃)
+    if (!env.DB) {
+      return errorResp("Database D1 is not bound. Check wrangler.toml", 500);
+    }
+
     const url = new URL(request.url);
-    const method = request.method;
+    // 🛠️ 修复：移除路径末尾的斜杠，防止 '/api/data/' 匹配失败
+    const path = url.pathname.endsWith('/') && url.pathname.length > 1 
+      ? url.pathname.slice(0, -1) 
+      : url.pathname;
     
-    // 初始化数据库访问对象
+    const method = request.method;
     const dao = new DAO(env.DB);
 
     // ==========================================
-    // 2. CORS Preflight (预检请求处理)
+    // 2. CORS Preflight
     // ==========================================
     if (method === 'OPTIONS') {
-      return new Response(null, { headers: CORS_HEADERS });
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
     // ==========================================
-    // 3. 鉴权逻辑 (Hardened Auth Strategy)
+    // 3. 鉴权逻辑 (修复 Bearer 格式问题)
     // ==========================================
     const authHeader = request.headers.get("Authorization");
+    let token = "";
     
+    // 🛠️ 修复：自动提取 'Bearer ' 后的 Token
+    if (authHeader) {
+      token = authHeader.startsWith("Bearer ") 
+        ? authHeader.slice(7).trim() 
+        : authHeader.trim();
+    }
+
     // Level 1: Root 身份 (最高权限)
-    // 使用 safeCompare 防止时序攻击
     let isRoot = false;
-    if (env.PASSWORD && authHeader) {
-      isRoot = safeCompare(authHeader, env.PASSWORD);
+    if (env.PASSWORD && token) {
+      isRoot = safeCompare(token, env.PASSWORD);
     }
     
     // Level 2: User 身份 (API 用户)
-    // 允许 Root 或 持有有效 Token 的用户
     let isUser = isRoot;
-    
-    // 如果不是 Root，尝试去数据库验证 Token
-    if (!isRoot && authHeader) {
-       // validateToken 内部是查库匹配 Hash，天然安全
-       isUser = await dao.validateToken(authHeader);
+    if (!isRoot && token) {
+       // 如果密码不对，再查库看看是不是普通 Token
+       isUser = await dao.validateToken(token);
     }
 
     // ==========================================
@@ -79,12 +87,12 @@ export default {
     // ==========================================
 
     // [GET] PWA Manifest
-    if (url.pathname === '/manifest.json') {
+    if (path === '/manifest.json') {
       let title = env.TITLE || "Nav";
       try {
          const config = await dao.getConfigs();
          if (config.title) title = config.title;
-      } catch(e) { /* DB可能未初始化 */ } 
+      } catch(e) {} 
 
       return new Response(JSON.stringify({
         name: title,
@@ -98,49 +106,37 @@ export default {
     }
 
     // [GET] 健康检查
-    if (url.pathname === '/api/health') {
-      try {
-        return json({ status: 'ok', ...(await dao.getStats()) });
-      } catch (e) {
-        return json({ status: 'error', message: 'Database disconnected' }, 500);
-      }
+    if (path === '/api/health') {
+      return json({ status: 'ok', ...(await dao.getStats()) });
     }
 
     // [GET] 获取公共配置
-    if (url.pathname === '/api/config' && method === 'GET') {
-      try {
-        const conf = await dao.getConfigs();
-        return json({
-          title: conf.title || env.TITLE || "My Nav",
-          bg_image: conf.bg_image || env.BG_IMAGE || "",
-          allow_search: conf.allow_search !== 'false'
-        });
-      } catch (e) {
-        return errorResp("System not ready", 503);
-      }
+    if (path === '/api/config' && method === 'GET') {
+      const conf = await dao.getConfigs();
+      return json({
+        title: conf.title || env.TITLE || "My Nav",
+        bg_image: conf.bg_image || env.BG_IMAGE || "",
+        allow_search: conf.allow_search !== 'false'
+      });
     }
 
     // [SSR] 首页渲染
-    if (url.pathname === '/' || url.pathname === '/index.html') {
+    if (path === '/' || path === '/index.html') {
       try {
-        // false = 仅获取公开数据
-        const data = await dao.getAllData(false); 
-        
+        const data = await dao.getAllData(false); // false = 仅公开数据
         const uiConfig = {
           TITLE: data.config.title || env.TITLE || "My Nav",
           BG_IMAGE: data.config.bg_image || env.BG_IMAGE || "",
         };
-        
+        // 渲染 UI (ui.js 提供)
         return new Response(renderUI(data.nav, uiConfig), {
           headers: { "content-type": "text/html;charset=UTF-8" }
         });
       } catch (e) {
         return new Response(
           `<!DOCTYPE html><html><body style="background:#111;color:#fff;font-family:sans-serif;padding:2rem;">
-           <h1>🚧 System Initializing</h1>
-           <p>Database Error: ${e.message}</p>
-           <p>Hint: Ensure D1 is bound and migrations are applied.</p>
-           <code style="background:#333;padding:5px">npx wrangler d1 migrations apply DB --remote</code>
+           <h1>🚧 System Error</h1>
+           <p>${e.message}</p>
            </body></html>`, 
           { status: 500, headers: { "content-type": "text/html" } }
         );
@@ -151,7 +147,7 @@ export default {
     // 5. 保护接口 (Protected API Routes)
     // ==========================================
     
-    if (url.pathname.startsWith('/api/')) {
+    if (path.startsWith('/api/')) {
       
       // 🔒 鉴权拦截
       if (!isUser) {
@@ -165,7 +161,7 @@ export default {
         // ------------------------------------
         // A. 基础状态
         // ------------------------------------
-        if (url.pathname === '/api/auth/verify') {
+        if (path === '/api/auth/verify') {
           return json({ 
             status: 'ok', 
             role: isRoot ? 'root' : 'user',
@@ -179,26 +175,23 @@ export default {
         const rootEndpoints = [
           '/api/import', 
           '/api/export', 
-          '/api/config', // POST
+          // '/api/config', // 注意：GET 是公开的，POST 需要 Root，下面单独判断
           '/api/token/create', 
           '/api/token/delete'
         ];
-        
-        // 如果请求的是 Root 专属接口，且当前不是 Root (仅是 User)
-        if (rootEndpoints.includes(url.pathname) && !isRoot) {
-            // 特殊处理：/api/config GET 是公开的，POST 是 Root 专属
-            if (url.pathname === '/api/config' && method === 'GET') {
-                // pass (allow through) - 其实前面已经处理了 GET，这里是防御性编程
-            } else {
-                return errorResp("Root privilege required", 403);
-            }
+
+        // 检查 Root 权限
+        if (!isRoot) {
+           // 如果是 POST /api/config，必须 Root
+           if (path === '/api/config' && method === 'POST') return errorResp("Root privilege required", 403);
+           // 如果在黑名单里，拒绝
+           if (rootEndpoints.includes(path)) return errorResp("Root privilege required", 403);
         }
 
-        // [POST] 导入
-        if (url.pathname === '/api/import') return json(await dao.importData(body));
-
-        // [GET] 导出
-        if (url.pathname === '/api/export') {
+        // Root 功能路由
+        if (path === '/api/import') return json(await dao.importData(body));
+        
+        if (path === '/api/export') {
           const allData = await dao.getAllData(true); 
           const exportData = allData.nav.map(cat => ({
             category: cat.title,
@@ -213,39 +206,38 @@ export default {
           return json({ meta: { version: 1, date: new Date().toISOString() }, data: exportData });
         }
 
-        // [POST] Config / Token
-        if (url.pathname === '/api/config' && method === 'POST') {
+        if (path === '/api/config' && method === 'POST') {
            await dao.updateConfig(body.key, body.value);
            return json({ status: 'ok', key: body.key, value: body.value });
         }
-        if (url.pathname === '/api/token/create') return json(await dao.createToken(body.name));
-        if (url.pathname === '/api/token/delete') return json(await dao.deleteToken(body.id));
+        if (path === '/api/token/create') return json(await dao.createToken(body.name));
+        if (path === '/api/token/delete') return json(await dao.deleteToken(body.id));
 
         // ------------------------------------
-        // C. 普通数据操作 (CRUD)
+        // C. 普通数据操作 (CRUD) - User & Root 均可
         // ------------------------------------
         
-        // [GET] 获取全量数据 (API 模式)
-        if (url.pathname === '/api/data') return json(await dao.getAllData(true));
+        // [GET] 获取全量数据 (后台模式)
+        if (path === '/api/data') return json(await dao.getAllData(true));
 
         if (method === 'POST') {
           // Category
-          if (url.pathname === '/api/category') return json(await dao.addCategory(body));
-          if (url.pathname === '/api/category/update') return json(await dao.updateCategory(body));
-          if (url.pathname === '/api/category/delete') return json(await dao.deleteCategory(body.id));
-          if (url.pathname === '/api/category/reorder') return json(await dao.batchUpdateCategoriesOrder(body));
+          if (path === '/api/category') return json(await dao.addCategory(body));
+          if (path === '/api/category/update') return json(await dao.updateCategory(body));
+          if (path === '/api/category/delete') return json(await dao.deleteCategory(body.id));
+          if (path === '/api/category/reorder') return json(await dao.batchUpdateCategoriesOrder(body));
 
           // Link
-          if (url.pathname === '/api/link') return json(await dao.addLink(body));
-          if (url.pathname === '/api/link/update') return json(await dao.updateLink(body));
-          if (url.pathname === '/api/link/delete') return json(await dao.deleteLink(body.id));
-          if (url.pathname === '/api/link/reorder') return json(await dao.batchUpdateLinksOrder(body));
+          if (path === '/api/link') return json(await dao.addLink(body));
+          if (path === '/api/link/update') return json(await dao.updateLink(body));
+          if (path === '/api/link/delete') return json(await dao.deleteLink(body.id));
+          if (path === '/api/link/reorder') return json(await dao.batchUpdateLinksOrder(body));
         }
 
-        return errorResp("Endpoint not found", 404);
+        return errorResp(`Endpoint not found: ${path}`, 404);
 
       } catch (e) {
-        console.error(`[API Error] ${url.pathname}:`, e);
+        console.error(`[API Error] ${path}:`, e);
         return errorResp(e.message, 500);
       }
     }
