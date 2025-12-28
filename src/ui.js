@@ -3,14 +3,14 @@
  * Final Version: 修复空白页登录引导 + 增强删除功能可见性
  */
 export function renderUI(ssrData, ssrConfig) {
-  const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
-  
+  const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#039;' }[m]));
+
   // 注入服务端数据
   const safeState = JSON.stringify({
     data: ssrData.nav || [],
     config: ssrConfig,
-    auth: '',       
-    isRoot: false   
+    auth: '',
+    isRoot: false
   }).replace(/</g, "\\u003c");
 
   return `<!DOCTYPE html>
@@ -556,7 +556,12 @@ function renderGrid(customItems = null) {
 
   // 正常渲染卡片
   grid.innerHTML = items.map(item => {
-    const domain = new URL(item.url).hostname;
+    let domain = '';
+    try {
+      domain = new URL(item.url).hostname;
+    } catch (e) {
+      domain = 'example.com'; // URL 格式错误时使用默认值
+    }
     const fallback = \`https://icons.duckduckgo.com/ip3/\${domain}.ico\`;
     const icon = item.icon || \`https://api.iowen.cn/favicon/\${domain}.png\`;
 
@@ -746,6 +751,8 @@ function openLinkModal(id) {
     document.getElementById('l-title').value = '';
     document.getElementById('l-url').value = '';
     document.getElementById('l-icon').value = '';
+    document.getElementById('l-desc').value = '';
+    document.getElementById('l-private').checked = false;
     // 默认选中当前分类
     if (STATE.activeCatId) sel.value = STATE.activeCatId;
   }
