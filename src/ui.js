@@ -484,6 +484,8 @@ const ENGINES = {
       if (res.status === 'ok') {
         APP.isRoot = (res.role === 'root');
         document.getElementById('btn-logout').style.display = 'flex';
+        // 🔧 修复：登录成功后重新获取完整数据（包括私有分类）
+        await refreshData();
       } else {
         doLogout(); // Token 失效
       }
