@@ -1,4 +1,4 @@
-import { DAO } from './db.js';
+import DAO from './db.js';
 import { renderUI } from './ui.js';
 
 // ==============================================
