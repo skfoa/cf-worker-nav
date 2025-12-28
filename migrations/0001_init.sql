@@ -63,8 +63,10 @@ CREATE INDEX IF NOT EXISTS idx_tokens_hash ON tokens(token_hash);
 -- ==========================================
 -- 6. Seed Data (初始数据)
 -- ==========================================
+-- 插入默认分类
 INSERT INTO categories (title, sort_order) VALUES ('常用推荐', 0);
 
+-- 插入默认链接
 INSERT INTO links (category_id, title, url, description, sort_order) 
 SELECT id, 'GitHub', 'https://github.com', 'Where the world builds software', 0 
 FROM categories WHERE title='常用推荐';
@@ -73,7 +75,7 @@ INSERT INTO links (category_id, title, url, description, sort_order)
 SELECT id, 'Cloudflare', 'https://dash.cloudflare.com', 'Web Performance & Security', 1 
 FROM categories WHERE title='常用推荐';
 
--- 预置默认配置
+-- 插入默认配置
 INSERT OR IGNORE INTO configs (key, value, description) VALUES 
 ('title', 'My Navigation', '网站标题'),
 ('bg_image', '', '背景图片 URL'),
