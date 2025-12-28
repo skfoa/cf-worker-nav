@@ -1,591 +1,637 @@
 /**
  * src/ui.js
- * 前端界面渲染引擎 (SSR + Client Hydration)
+ * 前端 UI 渲染层 (SSR + CSR)
+ * 适配 API: v5.0
  */
-export function renderUI(data, config) {
-  // 安全转义，防止 XSS
+export function renderUI(ssrData, ssrConfig) {
+  // 安全转义
   const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
-  // 安全注入 JSON 数据
-  const safeJson = JSON.stringify(data).replace(/</g, "\\u003c");
+  const safeJson = (obj) => JSON.stringify(obj).replace(/</g, "\\u003c");
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>${esc(config.TITLE)}</title>
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>${esc(ssrConfig.TITLE)}</title>
+<meta name="description" content="Personal Navigation Dashboard">
+<link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png">
 <style>
   :root {
-    --bg-color: #111;
-    --text-primary: #fff;
-    --text-secondary: rgba(255,255,255,0.6);
-    --glass: rgba(30, 30, 30, 0.6);
-    --glass-border: rgba(255, 255, 255, 0.08);
+    --bg-overlay: rgba(0, 0, 0, 0.4);
+    --glass: rgba(26, 26, 26, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.1);
     --accent: #3b82f6;
     --danger: #ef4444;
+    --text-main: #f3f4f6;
+    --text-sub: #9ca3af;
+    --safe-top: env(safe-area-inset-top);
+    --safe-bottom: env(safe-area-inset-bottom);
   }
-  
+
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   
   body {
-    background-color: var(--bg-color);
-    background-image: url('${esc(config.BG_IMAGE)}');
-    background-position: center;
-    background-size: cover;
-    background-attachment: fixed;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: var(--text-primary);
+    background: url('${esc(ssrConfig.BG_IMAGE)}') center/cover fixed no-repeat, #111;
+    color: var(--text-main);
     min-height: 100vh;
-    padding-bottom: 100px;
-    /* 遮罩层，让背景暗一点 */
-    box-shadow: inset 0 0 0 100vh rgba(0,0,0,0.3);
+    padding-bottom: calc(80px + var(--safe-bottom));
   }
+  body::before { content: ''; position: fixed; inset: 0; background: var(--bg-overlay); z-index: -1; backdrop-filter: blur(3px); }
 
-  /* 顶部导航栏 (分类) */
-  .nav-bar {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    background: rgba(10,10,10,0.8);
+  /* --- Navbar --- */
+  .nav-header {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(18, 18, 18, 0.8); backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--glass-border);
-    padding: 10px 0;
-    display: flex;
-    justify-content: center;
+    padding-top: var(--safe-top);
   }
   .nav-scroll {
-    display: flex;
-    overflow-x: auto;
-    gap: 20px;
-    padding: 0 20px;
-    max-width: 1000px;
-    width: 100%;
-    scrollbar-width: none; /* Firefox */
+    display: flex; gap: 2px; padding: 0 10px; overflow-x: auto;
+    scrollbar-width: none;
   }
   .nav-scroll::-webkit-scrollbar { display: none; }
   
   .nav-item {
-    font-size: 15px;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    cursor: pointer;
-    padding: 8px 0;
-    position: relative;
-    transition: 0.2s;
+    padding: 14px 16px; font-size: 15px; font-weight: 500;
+    color: var(--text-sub); white-space: nowrap; cursor: pointer;
+    border-bottom: 2px solid transparent; transition: 0.2s;
+    user-select: none;
   }
-  .nav-item.active {
-    color: #fff;
-    font-weight: 600;
-  }
-  .nav-item.active::after {
-    content: '';
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 2px;
-    background: var(--accent);
-    border-radius: 2px;
-  }
-  .nav-item small { 
-    font-size: 10px; color: var(--danger); margin-left: 4px; vertical-align: top; 
-    opacity: 0.8;
-  }
-
-  /* 搜索框 */
+  .nav-item.active { color: #fff; border-bottom-color: var(--accent); }
+  .nav-item.private::after { content: '🔒'; font-size: 10px; margin-left: 4px; opacity: 0.7; }
+  
+  /* --- Search --- */
   .search-container {
-    margin: 40px auto 20px;
-    width: 90%;
-    max-width: 600px;
-    position: relative;
+    margin: 24px auto; width: 90%; max-width: 500px;
+    display: flex; flex-direction: column; gap: 10px;
   }
+  .search-engines { display: flex; justify-content: center; gap: 15px; font-size: 13px; color: var(--text-sub); }
+  .engine { cursor: pointer; transition: 0.2s; opacity: 0.6; }
+  .engine.active { opacity: 1; color: var(--accent); font-weight: bold; }
+  
+  .search-box {
+    position: relative; display: flex; align-items: center;
+    background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border);
+    border-radius: 12px; transition: 0.3s;
+  }
+  .search-box:focus-within { background: rgba(0,0,0,0.7); border-color: var(--accent); }
   .search-input {
-    width: 100%;
-    padding: 16px 24px;
-    border-radius: 16px;
-    border: 1px solid var(--glass-border);
-    background: var(--glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    color: #fff;
-    font-size: 16px;
-    outline: none;
-    text-align: center;
-    transition: 0.3s;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    flex: 1; background: transparent; border: none; padding: 14px;
+    color: #fff; font-size: 16px; outline: none;
   }
-  .search-input:focus {
-    background: rgba(40,40,40,0.9);
-    border-color: var(--accent);
-    text-align: left;
-    transform: scale(1.02);
-  }
-
-  /* 内容网格 */
+  
+  /* --- Grid --- */
   .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: 16px;
-    padding: 20px;
-    max-width: 1000px;
-    margin: 0 auto;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+    gap: 16px; padding: 16px; max-width: 1000px; margin: 0 auto;
   }
   
   .card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    aspect-ratio: 1/1; /* 正方形卡片 */
-    background: var(--glass);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid var(--glass-border);
-    border-radius: 18px;
-    text-decoration: none;
-    color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    border-radius: 16px; padding: 16px 10px;
+    text-decoration: none; color: var(--text-main);
     transition: transform 0.2s, background 0.2s;
-    position: relative;
-    padding: 10px;
+    position: relative; height: 105px;
+    backdrop-filter: blur(10px);
   }
-  .card:hover {
-    transform: translateY(-4px);
-    background: rgba(60,60,60,0.7);
-    border-color: rgba(255,255,255,0.2);
-  }
-  .card:active { transform: scale(0.96); }
-  
-  .card img {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    margin-bottom: 12px;
-    object-fit: contain;
-    background: rgba(255,255,255,0.05); /* 图标底色，防透明 */
-  }
-  .card span {
-    font-size: 13px;
-    text-align: center;
-    width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    opacity: 0.9;
-  }
-  
-  /* 空状态提示 */
-  .empty-state {
-    text-align: center;
-    color: var(--text-secondary);
-    margin-top: 50px;
-    font-size: 14px;
-  }
+  .card:hover { transform: translateY(-4px); background: rgba(50,50,50,0.9); }
+  .card img { width: 40px; height: 40px; margin-bottom: 10px; border-radius: 10px; object-fit: cover; background: rgba(255,255,255,0.05); }
+  .card span { font-size: 13px; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-private-badge { position: absolute; top: 6px; left: 6px; font-size: 10px; opacity: 0.6; }
 
-  /* 编辑模式样式 */
-  .editing .card {
-    border: 1px dashed var(--accent);
-    animation: shake 0.3s infinite alternate ease-in-out;
-  }
-  .del-btn {
-    position: absolute;
-    top: -8px; right: -8px;
-    width: 24px; height: 24px;
-    background: var(--danger);
-    border-radius: 50%;
-    color: #fff;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    font-weight: bold;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-    z-index: 10;
-  }
-  .editing .del-btn { display: flex; }
+  /* Edit Mode */
+  .editing .card { border: 1px dashed #fbbf24; animation: shake 0.3s infinite alternate; cursor: grab; }
+  .editing .card:active { cursor: grabbing; }
+  .edit-btn { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; background: var(--accent); border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 12px; z-index: 2; cursor: pointer; border: 2px solid #fff; }
+  .del-btn { position: absolute; top: -6px; left: -6px; width: 22px; height: 22px; background: var(--danger); border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 12px; z-index: 2; cursor: pointer; border: 2px solid #fff; }
+  .editing .edit-btn, .editing .del-btn { display: flex; }
+  
   @keyframes shake { from { transform: rotate(-1deg); } to { transform: rotate(1deg); } }
 
-  /* 底部 Dock 栏 */
-  .dock-container {
-    position: fixed;
-    bottom: 30px;
-    left: 0; right: 0;
-    display: flex;
-    justify-content: center;
-    pointer-events: none; /* 让两侧可点击穿透 */
-    z-index: 100;
-  }
+  /* --- Dock --- */
   .dock {
-    pointer-events: auto;
-    background: rgba(20,20,20,0.85);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--glass-border);
-    padding: 10px 20px;
-    border-radius: 100px;
-    display: flex;
-    gap: 24px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: fixed; bottom: calc(20px + var(--safe-bottom)); left: 50%; transform: translateX(-50%);
+    background: rgba(20,20,20,0.95); padding: 12px 24px; border-radius: 100px;
+    display: flex; gap: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    border: 1px solid var(--glass-border); z-index: 100;
   }
-  .dock-icon {
-    font-size: 20px;
-    cursor: pointer;
-    opacity: 0.7;
-    transition: 0.2s;
-    position: relative;
-    display: flex; align-items: center; justify-content: center;
-    width: 32px; height: 32px;
-  }
-  .dock-icon:hover { opacity: 1; transform: scale(1.1); }
-  .dock-icon.active { opacity: 1; color: var(--accent); }
+  .dock-btn { font-size: 22px; cursor: pointer; transition: 0.2s; opacity: 0.8; position: relative; }
+  .dock-btn:hover { transform: scale(1.15); opacity: 1; }
+  .dock-btn.active { color: var(--accent); opacity: 1; }
 
-  /* 弹窗 Modal */
-  .modal-overlay {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.7);
-    backdrop-filter: blur(5px);
-    z-index: 200;
-    display: none;
-    align-items: center; justify-content: center;
-    opacity: 0; transition: opacity 0.2s;
+  /* --- Modals --- */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+    display: none; align-items: center; justify-content: center; z-index: 200;
+    backdrop-filter: blur(5px); animation: fadeIn 0.2s;
   }
-  .modal-overlay.show { opacity: 1; }
-  
   .modal {
-    background: #1c1c1e;
-    width: 90%; max-width: 340px;
-    border-radius: 20px;
-    border: 1px solid rgba(255,255,255,0.1);
-    padding: 24px;
-    transform: scale(0.95); transition: transform 0.2s;
+    background: #1c1c1e; width: 85%; max-width: 360px; padding: 24px;
+    border-radius: 20px; border: 1px solid #333;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   }
-  .modal-overlay.show .modal { transform: scale(1); }
+  .modal h3 { margin-bottom: 20px; font-weight: 600; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+  .modal-form { display: flex; flex-direction: column; gap: 12px; }
   
-  .modal h3 { margin-bottom: 20px; font-weight: 600; text-align: center; }
-  .form-group { margin-bottom: 16px; }
-  .form-input {
-    width: 100%; padding: 12px;
-    background: #2c2c2e; border: none; border-radius: 10px;
-    color: #fff; font-size: 16px;
-    outline: none; transition: 0.2s;
+  input, select, textarea {
+    width: 100%; padding: 12px; background: #2c2c2e; border: 1px solid #3a3a3c;
+    border-radius: 10px; color: #fff; font-size: 15px; outline: none; transition: 0.2s;
   }
-  .form-input:focus { ring: 2px solid var(--accent); background: #3a3a3c; }
+  input:focus, select:focus { border-color: var(--accent); background: #3a3a3c; }
   
-  .btn-row { display: flex; gap: 12px; margin-top: 24px; }
-  .btn {
-    flex: 1; padding: 12px;
-    border: none; border-radius: 10px;
-    font-size: 15px; font-weight: 600; cursor: pointer;
-  }
-  .btn-cancel { background: #3a3a3c; color: #aaa; }
+  .checkbox-group { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-sub); margin: 5px 0; }
+  .checkbox-group input { width: auto; transform: scale(1.2); }
+
+  .btn-group { display: flex; gap: 12px; margin-top: 20px; }
+  .btn { flex: 1; padding: 12px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 15px; transition: 0.2s; }
   .btn-primary { background: var(--accent); color: #fff; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-ghost { background: #3a3a3c; color: #ccc; }
+  .btn:active { transform: scale(0.96); }
+
+  /* Settings Panel specific */
+  .settings-section { margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 15px; }
+  .settings-section h4 { color: var(--text-sub); font-size: 12px; text-transform: uppercase; margin-bottom: 10px; }
+  .token-item { display: flex; justify-content: space-between; background: #2c2c2e; padding: 8px; border-radius: 6px; margin-bottom: 5px; font-size: 13px; }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>
 </head>
 <body>
 
-  <!-- 分类导航 -->
-  <div class="nav-bar">
-    <div class="nav-scroll" id="cat-list">
-      <!-- JS 渲染 -->
+  <!-- 1. Navbar -->
+  <header class="nav-header">
+    <div class="nav-scroll" id="nav-tabs"></div>
+  </header>
+
+  <!-- 2. Search -->
+  <div class="search-container" id="search-section">
+    <div class="search-engines" id="engines">
+      <div class="engine active" data-url="https://www.google.com/search?q=">Google</div>
+      <div class="engine" data-url="https://cn.bing.com/search?q=">Bing</div>
+      <div class="engine" data-url="https://www.baidu.com/s?wd=">Baidu</div>
+      <div class="engine" data-url="https://github.com/search?q=">GitHub</div>
+    </div>
+    <div class="search-box">
+      <input class="search-input" id="search-input" placeholder="Search..." autocomplete="off">
     </div>
   </div>
 
-  <!-- 搜索 -->
-  <div class="search-container">
-    <input class="search-input" id="search" placeholder="Search..." autocomplete="off">
+  <!-- 3. Main Grid -->
+  <main class="grid" id="main-grid"></main>
+
+  <!-- 4. Dock (Bottom) -->
+  <div class="dock">
+    <div class="dock-btn" onclick="toggleEdit()" id="btn-edit" title="编辑模式">⚙️</div>
+    <div class="dock-btn" onclick="openModal('link')" title="添加链接">➕</div>
+    <div class="dock-btn" onclick="openModal('settings')" id="btn-settings" title="系统设置">🔧</div>
+    <div class="dock-btn" onclick="doLogout()" style="color:var(--danger); display:none" id="btn-logout" title="退出">🚪</div>
   </div>
 
-  <!-- 链接网格 -->
-  <div class="grid" id="link-grid">
-    <!-- JS 渲染 -->
-  </div>
+  <!-- Modal: Link/Category Form -->
+  <div class="modal-mask" id="m-form"><div class="modal">
+    <h3 id="m-title">添加</h3>
+    <div class="modal-form">
+      <input type="hidden" id="f-id">
+      <input id="f-title" placeholder="名称 (Title)">
+      
+      <!-- Link fields -->
+      <div id="f-link-fields">
+        <input id="f-url" placeholder="网址 (https://...)">
+        <input id="f-desc" placeholder="描述 (可选)">
+        <input id="f-icon" placeholder="图标 URL (可选)">
+        <select id="f-cat"></select>
+      </div>
 
-  <!-- 底部操作栏 -->
-  <div class="dock-container">
-    <div class="dock">
-      <div class="dock-icon" onclick="toggleEdit()" title="设置/编辑">⚙️</div>
-      <div class="dock-icon" onclick="openModal('link')" title="添加链接">➕</div>
-      <div class="dock-icon" onclick="openModal('cat')" title="新建分类">📁</div>
-      <!-- 只有在登录后才显示注销 -->
-      <div class="dock-icon" id="btn-logout" onclick="doLogout()" style="display:none" title="退出">👋</div>
-    </div>
-  </div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="f-private">
+        <label for="f-private">设为私有 (Private) 🔒</label>
+      </div>
 
-  <!-- Modal: Link -->
-  <div class="modal-overlay" id="m-link"><div class="modal">
-    <h3>添加网站</h3>
-    <div class="form-group"><input class="form-input" id="l-title" placeholder="网站名称"></div>
-    <div class="form-group"><input class="form-input" id="l-url" placeholder="网址 (https://...)"></div>
-    <div class="form-group"><input class="form-input" id="l-icon" placeholder="图标地址 (可选)"></div>
-    <div class="form-group">
-      <select class="form-input" id="l-cat-select"></select>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-cancel" onclick="closeModal()">取消</button>
-      <button class="btn btn-primary" onclick="submitLink()">添加</button>
+      <div class="btn-group">
+        <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+        <button class="btn btn-primary" onclick="submitForm()">保存</button>
+      </div>
+      
+      <div class="btn-group" id="btn-add-cat-wrapper" style="margin-top:0">
+        <button class="btn btn-ghost" style="font-size:12px" onclick="switchToCatMode()">📂 切换到“新建分类”模式</button>
+      </div>
     </div>
   </div></div>
 
-  <!-- Modal: Category -->
-  <div class="modal-overlay" id="m-cat"><div class="modal">
-    <h3>新建分类</h3>
-    <div class="form-group"><input class="form-input" id="c-title" placeholder="分类名称"></div>
-    <div class="form-group" style="display:flex;align-items:center;gap:10px;color:#ccc;font-size:14px">
-      <input type="checkbox" id="c-private"> 设为私有分类 (仅登录可见)
+  <!-- Modal: Auth -->
+  <div class="modal-mask" id="m-auth"><div class="modal">
+    <h3>管理员认证</h3>
+    <div class="modal-form">
+      <input type="password" id="auth-pwd" placeholder="输入密码或 Token">
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="doLogin()">进入后台</button>
+      </div>
     </div>
-    <div class="btn-row">
-      <button class="btn btn-cancel" onclick="closeModal()">取消</button>
-      <button class="btn btn-primary" onclick="submitCat()">创建</button>
+  </div></div>
+
+  <!-- Modal: Settings -->
+  <div class="modal-mask" id="m-settings"><div class="modal" style="max-width:400px">
+    <h3>系统设置 <span style="font-size:12px;cursor:pointer" onclick="closeModal()">✕</span></h3>
+    
+    <div class="settings-section">
+      <h4>全局配置</h4>
+      <input id="set-title" placeholder="网站标题" style="margin-bottom:8px">
+      <input id="set-bg" placeholder="背景图片 URL">
+      <button class="btn btn-primary" style="margin-top:10px;padding:8px" onclick="saveSysConfig()">更新配置</button>
+    </div>
+
+    <div class="settings-section" id="sec-token">
+      <h4>API Tokens</h4>
+      <div style="display:flex;gap:5px;margin-bottom:10px">
+        <input id="new-token-name" placeholder="Token 备注名" style="font-size:13px">
+        <button class="btn btn-primary" style="flex:0 0 60px;font-size:12px" onclick="createToken()">生成</button>
+      </div>
+      <div id="token-list" style="max-height:100px;overflow-y:auto"></div>
+    </div>
+
+    <div class="settings-section" style="border:none">
+      <h4>数据备份</h4>
+      <button class="btn btn-ghost" onclick="exportData()">⬇️ 导出 JSON 数据</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('file-import').click()" style="margin-top:8px">⬆️ 导入 JSON 数据</button>
+      <input type="file" id="file-import" style="display:none" onchange="importData(this)">
     </div>
   </div></div>
 
 <script>
-  // ============================================
-  // 核心逻辑
-  // ============================================
-  let DATA = ${safeJson}; // 服务端注入的数据
-  let activeCatId = null;
-  let isEditing = false;
+/**
+ * Core Logic
+ */
+const state = {
+  data: ${safeJson(ssrData)},
+  currentCatId: 0,
+  auth: localStorage.getItem('nav_auth') || '',
+  isRoot: false,
+  isEditing: false,
+  searchUrl: 'https://www.google.com/search?q='
+};
 
-  // 初始化
-  function init() {
-    // 优先选择第一个分类，如果没有数据，则为 null
-    if (DATA && DATA.length > 0) {
-      activeCatId = DATA[0].id;
-    }
-    
-    // 检查登录状态
-    if (localStorage.getItem('nav_pwd')) {
-      document.getElementById('btn-logout').style.display = 'flex';
-      // 如果本地已有密码，尝试后台验证一次（静默）
-      api('/api/auth/verify').then(res => {
-         if(!res) { 
-           // 密码失效
-           localStorage.removeItem('nav_pwd');
-           document.getElementById('btn-logout').style.display = 'none';
-         }
-      });
-    }
-
-    render();
-  }
-
-  // 渲染函数
-  function render() {
-    renderCats();
-    renderGrid();
-  }
-
-  function renderCats() {
-    const list = document.getElementById('cat-list');
-    if (!DATA || DATA.length === 0) {
-      list.innerHTML = '<div class="nav-item">暂无分类</div>';
-      return;
-    }
-
-    list.innerHTML = DATA.map(c => \`
-      <div class="nav-item \${c.id === activeCatId ? 'active' : ''}" onclick="switchCat(\${c.id})">
-        \${escapeHtml(c.title)}
-        \${c.is_private ? '🔒' : ''}
-        \${isEditing ? \`<small onclick="delCat(\${c.id}, event)">x</small>\` : ''}
-      </div>
-    \`).join('');
-  }
-
-  function renderGrid() {
-    const grid = document.getElementById('link-grid');
-    grid.classList.toggle('editing', isEditing);
-
-    // 找到当前分类
-    const cat = DATA.find(c => c.id === activeCatId);
-    
-    if (!cat || !cat.items || cat.items.length === 0) {
-      grid.innerHTML = \`<div class="empty-state">\${DATA.length===0 ? '还没有数据，请点击底部 + 号添加' : '该分类下暂无链接'}</div>\`;
-      return;
-    }
-
-    grid.innerHTML = cat.items.map(l => {
-      // 图标自动回退逻辑
-      const domain = getDomain(l.url);
-      const iconSrc = l.icon || \`https://api.iowen.cn/favicon/\${domain}.png\`;
-      const fallback = \`https://icons.duckduckgo.com/ip3/\${domain}.ico\`;
-      
-      return \`
-      <div style="position:relative">
-        <a class="card" href="\${escapeHtml(l.url)}" target="_blank">
-          <img src="\${escapeHtml(iconSrc)}" loading="lazy" onerror="this.src='\${fallback}'">
-          <span>\${escapeHtml(l.title)}</span>
-        </a>
-        <div class="del-btn" onclick="delLink(\${l.id})">×</div>
-      </div>\`;
-    }).join('');
-  }
-
-  // 切换分类
-  window.switchCat = (id) => {
-    activeCatId = id;
-    render();
-  }
-
-  // ============================================
-  // 交互逻辑
-  // ============================================
+// 1. Initialization
+async function init() {
+  if (state.data.length > 0) state.currentCatId = state.data[0].id;
   
-  // 1. 认证
-  function getPwd() { return localStorage.getItem('nav_pwd'); }
-  
-  async function checkAuth() {
-    if (getPwd()) return true;
-    const p = prompt("请输入管理密码:");
-    if (!p) return false;
-    
-    // 简单验证一下
-    localStorage.setItem('nav_pwd', p);
-    const res = await api('/api/auth/verify');
-    if (res) {
-      document.getElementById('btn-logout').style.display = 'flex';
-      // 登录成功后，刷新页面以获取可能存在的私有数据
-      location.reload(); 
-      return true;
-    } else {
-      alert("密码错误");
-      localStorage.removeItem('nav_pwd');
-      return false;
-    }
-  }
-
-  window.doLogout = () => {
-    if(confirm('确定退出登录？')) {
-      localStorage.removeItem('nav_pwd');
-      location.reload();
-    }
-  }
-
-  // 2. 通用 API 请求
-  async function api(path, body) {
-    const headers = { 'Content-Type': 'application/json' };
-    const pwd = getPwd();
-    if (pwd) headers['Authorization'] = pwd;
-
+  // Verify Auth
+  if (state.auth) {
     try {
-      const res = await fetch(path, {
-        method: body ? 'POST' : 'GET',
-        headers,
-        body: body ? JSON.stringify(body) : undefined
-      });
+      const res = await api('/api/auth/verify');
+      if (res.status === 'ok') {
+        state.isRoot = res.role === 'root';
+        document.getElementById('btn-logout').style.display = 'flex';
+        // Refresh data (to get private items)
+        await refreshData();
+      } else {
+        doLogout();
+      }
+    } catch(e) { console.log('Offline or Auth expired'); }
+  }
+
+  renderTabs();
+  renderGrid();
+  setupSearch();
+  setupDragDrop();
+}
+
+// 2. Rendering
+function renderTabs() {
+  const el = document.getElementById('nav-tabs');
+  el.innerHTML = state.data.map(c => \`
+    <div class="nav-item \${c.id === state.currentCatId ? 'active' : ''} \${c.is_private ? 'private' : ''}" 
+         onclick="switchCat(\${c.id})"
+         ondblclick="editCat(\${c.id})">
+      \${esc(c.title)}
+    </div>
+  \`).join('') + (state.auth ? \`<div class="nav-item" onclick="openModal('cat_new')">+</div>\` : '');
+}
+
+function renderGrid() {
+  const cat = state.data.find(c => c.id === state.currentCatId);
+  const grid = document.getElementById('main-grid');
+  
+  if (!cat || !cat.items.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;opacity:0.5;margin-top:50px">No Links</div>';
+    return;
+  }
+
+  grid.innerHTML = cat.items.map(item => {
+    // Icon Fallback Logic
+    let iconSrc = item.icon;
+    let fallback = '';
+    const domain = getDomain(item.url);
+    if (!iconSrc) {
+       iconSrc = \`https://api.iowen.cn/favicon/\${domain}.png\`;
+       fallback = \`onerror="this.src='https://icons.duckduckgo.com/ip3/\${domain}.ico'"\`;
+    }
+
+    return \`
+    <div class="card-wrapper" draggable="\${state.isEditing}" data-id="\${item.id}">
+      <a class="card" href="\${esc(item.url)}" target="_blank" onclick="\${state.isEditing?'return false':''}">
+        <img src="\${iconSrc}" \${fallback} loading="lazy">
+        <span>\${esc(item.title)}</span>
+        \${item.description ? \`<span style="font-size:10px;opacity:0.6">\${esc(item.description)}</span>\` : ''}
+        \${state.isEditing ? '' : (item.is_private ? '<span class="card-private-badge">🔒</span>' : '')}
+      </a>
+      <div class="edit-btn" onclick="editLink(\${item.id})">✎</div>
+      <div class="del-btn" onclick="delLink(\${item.id})">✕</div>
+    </div>\`;
+  }).join('');
+  
+  grid.classList.toggle('editing', state.isEditing);
+}
+
+// 3. Interactions
+function switchCat(id) { state.currentCatId = id; renderTabs(); renderGrid(); }
+
+function toggleEdit() {
+  if (!checkAuth()) return;
+  state.isEditing = !state.isEditing;
+  document.getElementById('btn-edit').classList.toggle('active', state.isEditing);
+  renderGrid();
+}
+
+function getDomain(url) {
+  try { return new URL(url).hostname; } catch(e) { return ''; }
+}
+
+// 4. API & Data
+async function api(path, body = null) {
+  const opts = {
+    method: body ? 'POST' : 'GET',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': state.auth
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  
+  const res = await fetch(path, opts);
+  if (res.status === 401) {
+    alert("Token Expired");
+    doLogout();
+    throw new Error("401");
+  }
+  return res.json();
+}
+
+async function refreshData() {
+  const res = await api('/api/data');
+  state.data = res.nav;
+  renderTabs();
+  renderGrid();
+}
+
+// 5. Forms & Modals
+let formMode = 'link'; // 'link' | 'cat'
+let editingId = null;
+
+function openModal(type) {
+  if (!checkAuth()) return;
+  closeModal();
+  
+  // Reset Form
+  document.getElementById('f-id').value = '';
+  document.getElementById('f-title').value = '';
+  document.getElementById('f-private').checked = false;
+  editingId = null;
+
+  if (type === 'settings') {
+    if (!state.isRoot) { alert("仅 Root 管理员可用"); return; }
+    document.getElementById('m-settings').style.display = 'flex';
+    document.getElementById('set-title').value = document.title;
+    return;
+  }
+
+  if (type === 'cat_new') switchToCatMode();
+  else if (type === 'link') switchToLinkMode();
+
+  document.getElementById('m-form').style.display = 'flex';
+}
+
+function switchToLinkMode() {
+  formMode = 'link';
+  document.getElementById('m-title').innerText = '添加/编辑 链接';
+  document.getElementById('f-link-fields').style.display = 'block';
+  document.getElementById('btn-add-cat-wrapper').style.display = 'flex';
+  
+  // Fill Cat Select
+  const sel = document.getElementById('f-cat');
+  sel.innerHTML = state.data.map(c => \`<option value="\${c.id}">\${esc(c.title)}</option>\`).join('');
+  sel.value = state.currentCatId;
+}
+
+function switchToCatMode() {
+  formMode = 'cat';
+  document.getElementById('m-title').innerText = '新建/编辑 分类';
+  document.getElementById('f-link-fields').style.display = 'none';
+  document.getElementById('btn-add-cat-wrapper').style.display = 'none';
+}
+
+function closeModal() { document.querySelectorAll('.modal-mask').forEach(e => e.style.display = 'none'); }
+
+async function submitForm() {
+  const id = editingId;
+  const title = document.getElementById('f-title').value;
+  const is_private = document.getElementById('f-private').checked ? 1 : 0;
+  
+  if (!title) return alert("标题必填");
+
+  try {
+    if (formMode === 'link') {
+      const url = document.getElementById('f-url').value;
+      if (!url) return alert("URL 必填");
       
-      if (res.status === 401) return false; // Auth fail
-      if (res.status === 200) return await res.json();
-      return false;
-    } catch(e) {
-      return false;
-    }
-  }
+      const payload = {
+        title, url, is_private,
+        category_id: document.getElementById('f-cat').value,
+        description: document.getElementById('f-desc').value,
+        icon: document.getElementById('f-icon').value
+      };
 
-  // 3. 编辑模式
-  window.toggleEdit = async () => {
-    if (await checkAuth()) {
-      isEditing = !isEditing;
-      render();
-    }
-  }
+      if (id) await api('/api/link/update', { id, ...payload });
+      else await api('/api/link', payload);
 
-  // 4. Modal 操作
-  window.openModal = async (type) => {
-    if (!(await checkAuth())) return;
+    } else {
+      if (id) await api('/api/category/update', { id, title, is_private });
+      else await api('/api/category', { title, is_private });
+    }
     
-    document.querySelectorAll('.modal-overlay').forEach(el => {
-      el.classList.remove('show');
-      el.style.display = 'none';
-    });
+    closeModal();
+    await refreshData();
+  } catch(e) { alert(e.message); }
+}
 
-    const modalId = type === 'link' ? 'm-link' : 'm-cat';
-    const el = document.getElementById(modalId);
-    el.style.display = 'flex';
-    // 强制重绘以触发 transition
-    el.offsetHeight; 
-    el.classList.add('show');
-
-    if (type === 'link') {
-      // 填充分类选择框
-      const sel = document.getElementById('l-cat-select');
-      sel.innerHTML = DATA.map(c => \`<option value="\${c.id}">\${escapeHtml(c.title)}\</option>\`).join('');
-      if (activeCatId) sel.value = activeCatId;
-    }
-  }
-
-  window.closeModal = () => {
-    document.querySelectorAll('.modal-overlay').forEach(el => {
-      el.classList.remove('show');
-      setTimeout(() => el.style.display = 'none', 200);
-    });
-  }
-
-  // 5. 提交数据
-  window.submitCat = async () => {
-    const title = document.getElementById('c-title').value;
-    const isPrivate = document.getElementById('c-private').checked ? 1 : 0;
-    if (!title) return alert("请输入名称");
-
-    const res = await api('/api/category', { title, is_private: isPrivate });
-    if (res && res.success !== false) location.reload();
-    else alert("操作失败");
-  }
-
-  window.submitLink = async () => {
-    const title = document.getElementById('l-title').value;
-    const url = document.getElementById('l-url').value;
-    const catId = document.getElementById('l-cat-select').value;
-    const icon = document.getElementById('l-icon').value;
-    
-    if (!title || !url) return alert("请填写完整");
-
-    const res = await api('/api/link', { category_id: catId, title, url, icon });
-    if (res && res.success !== false) location.reload();
-    else alert("操作失败");
-  }
-
-  // 6. 删除
-  window.delLink = async (id) => {
-    if (confirm("确定删除此链接？")) {
-      await api('/api/link/delete', { id });
-      // 乐观更新 UI (不刷新页面)
-      const cat = DATA.find(c => c.id === activeCatId);
-      cat.items = cat.items.filter(i => i.id !== id);
-      render();
-    }
-  }
-
-  window.delCat = async (id, e) => {
-    e.stopPropagation();
-    if (confirm("确定删除此分类及其下所有链接？")) {
-      const res = await api('/api/category/delete', { id });
-      if (res) location.reload();
-    }
-  }
-
-  // 工具函数
-  function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#039;'}[m]));
-  }
+function editLink(id) {
+  const cat = state.data.find(c => c.id === state.currentCatId);
+  const item = cat.items.find(i => i.id === id);
+  if (!item) return;
   
-  function getDomain(url) {
-    try { return new URL(url).hostname; } catch(e) { return ''; }
+  openModal('link');
+  editingId = id;
+  document.getElementById('m-title').innerText = '编辑链接';
+  document.getElementById('f-title').value = item.title;
+  document.getElementById('f-url').value = item.url;
+  document.getElementById('f-desc').value = item.description || '';
+  document.getElementById('f-icon').value = item.icon || '';
+  document.getElementById('f-cat').value = item.category_id;
+  document.getElementById('f-private').checked = !!item.is_private; // Note: Links usually inherit privacy, but DB supports per-link
+}
+
+function editCat(id) {
+  if (!state.auth) return;
+  const cat = state.data.find(c => c.id === id);
+  openModal('cat_new');
+  editingId = id;
+  document.getElementById('m-title').innerText = '编辑分类';
+  document.getElementById('f-title').value = cat.title;
+  document.getElementById('f-private').checked = !!cat.is_private;
+}
+
+async function delLink(id) {
+  if (confirm("确定删除?")) {
+    await api('/api/link/delete', { id });
+    await refreshData();
   }
+}
+
+// 6. Auth
+function checkAuth() {
+  if (state.auth) return true;
+  document.getElementById('m-auth').style.display = 'flex';
+  document.getElementById('auth-pwd').focus();
+  return false;
+}
+
+async function doLogin() {
+  const pwd = document.getElementById('auth-pwd').value;
+  if (!pwd) return;
   
-  // 搜索回车事件
-  document.getElementById('search').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.value) {
-      window.open('https://www.google.com/search?q=' + encodeURIComponent(e.target.value));
+  state.auth = pwd;
+  try {
+    const res = await api('/api/auth/verify');
+    if (res.status === 'ok') {
+      localStorage.setItem('nav_auth', pwd);
+      state.isRoot = res.role === 'root';
+      closeModal();
+      location.reload(); // Reload to get private SSR data
     }
+  } catch(e) { alert("认证失败"); state.auth = ''; }
+}
+
+function doLogout() {
+  localStorage.removeItem('nav_auth');
+  location.reload();
+}
+
+// 7. Drag & Drop (Native)
+function setupDragDrop() {
+  const grid = document.getElementById('main-grid');
+  let draggedItem = null;
+
+  grid.addEventListener('dragstart', e => {
+    if (!state.isEditing) { e.preventDefault(); return; }
+    draggedItem = e.target.closest('.card-wrapper');
+    e.dataTransfer.effectAllowed = 'move';
+    draggedItem.style.opacity = '0.5';
   });
 
-  // 启动!
-  init();
+  grid.addEventListener('dragend', async e => {
+    if (!draggedItem) return;
+    draggedItem.style.opacity = '1';
+    
+    // Save Order
+    const children = Array.from(grid.children);
+    const updates = children.map((el, idx) => ({
+      id: parseInt(el.dataset.id),
+      sort_order: idx
+    }));
+    
+    // Optimistic update done visually, now sync DB
+    await api('/api/link/reorder', updates);
+    draggedItem = null;
+  });
+
+  grid.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!draggedItem) return;
+    const target = e.target.closest('.card-wrapper');
+    if (target && target !== draggedItem) {
+      const rect = target.getBoundingClientRect();
+      const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+      grid.insertBefore(draggedItem, next ? target.nextSibling : target);
+    }
+  });
+}
+
+// 8. Settings & Tokens
+async function createToken() {
+  const name = document.getElementById('new-token-name').value;
+  if(!name) return;
+  const res = await api('/api/token/create', { name });
+  if(res.token) {
+    alert(\`Token 创建成功 (仅显示一次):\\n\${res.token}\`);
+    document.getElementById('new-token-name').value = '';
+    loadTokens();
+  }
+}
+
+async function saveSysConfig() {
+  const t = document.getElementById('set-title').value;
+  const b = document.getElementById('set-bg').value;
+  await api('/api/config', { key: 'title', value: t });
+  await api('/api/config', { key: 'bg_image', value: b });
+  alert("已保存，刷新生效");
+}
+
+async function exportData() {
+  const res = await api('/api/export');
+  const blob = new Blob([JSON.stringify(res.data, null, 2)], {type : 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'nav-backup.json'; a.click();
+}
+
+async function importData(input) {
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const json = JSON.parse(e.target.result);
+      if(confirm(\`将导入 \${json.length} 个分类，这会覆盖现有数据吗？(取决于后端实现，通常是追加)\`)) {
+        await api('/api/import', { data: json });
+        alert("导入完成"); location.reload();
+      }
+    } catch(err) { alert("文件格式错误"); }
+  };
+  reader.readAsText(file);
+}
+
+// 9. Search
+function setupSearch() {
+  document.querySelectorAll('.engine').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.engine').forEach(e => e.classList.remove('active'));
+      el.classList.add('active');
+      state.searchUrl = el.dataset.url;
+    });
+  });
+  
+  document.getElementById('search-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.value) {
+      window.open(state.searchUrl + encodeURIComponent(e.target.value));
+    }
+  });
+}
+
+// Start
+init();
 </script>
 </body>
 </html>`;
