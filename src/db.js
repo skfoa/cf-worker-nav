@@ -98,10 +98,12 @@ export class DAO {
   // ===========================================
 
   async addCategory({ title, is_private = 0 }) {
+    // 确保 is_private 只能是 0 或 1，防止 NaN 或其他异常值
+    const privateVal = is_private ? 1 : 0;
     return await this.db.prepare(
       `INSERT INTO categories (title, sort_order, is_private, created_at, updated_at) 
        VALUES (?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories), ?, ?, ?)`
-    ).bind(title, Number(is_private), this._now(), this._now()).run();
+    ).bind(title, privateVal, this._now(), this._now()).run();
   }
 
   async updateCategory({ id, title, is_private }) {
@@ -135,11 +137,12 @@ export class DAO {
   // ===========================================
 
   async addLink({ category_id, title, url, icon = "", description = "", is_private = 0 }) {
-    // 🛠️ 修复：写入时包含 is_private 字段
+    // 确保 is_private 只能是 0 或 1，防止 NaN 或其他异常值
+    const privateVal = is_private ? 1 : 0;
     return await this.db.prepare(
       `INSERT INTO links (category_id, title, url, description, icon, is_private, sort_order, created_at, updated_at) 
        VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM links WHERE category_id = ?), ?, ?)`
-    ).bind(category_id, title, url, description, icon, Number(is_private), category_id, this._now(), this._now()).run();
+    ).bind(category_id, title, url, description, icon, privateVal, category_id, this._now(), this._now()).run();
   }
 
   async updateLink({ id, category_id, title, url, description, icon, is_private }) {
