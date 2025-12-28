@@ -1,12 +1,21 @@
 name = "cf-worker-nav"
 main = "src/index.js"
-compatibility_date = "2025-12-27"
+# 保持最新即可，或者锁定在你当前的开发日期
+compatibility_date = "2025-01-01"
 
 # 绑定 D1 数据库
 [[d1_databases]]
 binding = "DB"
 database_name = "nav-db"
+# 注意：
+# 1. 在 GitHub Action 中，这个值会被 sed 命令自动替换为真实 ID
+# 2. 在本地开发(npm run dev)时，你需要手动把下面这行改成真实的 ID，或者创建一个 .dev.vars 文件
 database_id = "D1_ID_PLACEHOLDER"
 
 [observability]
 enabled = true
+
+# [可选] 这里的 vars 是公开的默认环境变量
+# 敏感信息(如 PASSWORD) 不要写在这里，请在 GitHub Secrets 或 .dev.vars 中配置
+[vars]
+# TITLE = "我的默认导航"
