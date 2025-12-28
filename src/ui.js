@@ -64,6 +64,7 @@ export function renderUI(ssrData, ssrConfig) {
     display: flex; gap: 24px; padding: 0 24px;
     overflow-x: auto; scrollbar-width: none; align-items: center;
     max-width: 1200px; width: 100%;
+    justify-content: center; /* 分类居中显示 */
   }
   
   @media (max-width: 768px) { .nav-header { justify-content: flex-start; } }
@@ -155,6 +156,27 @@ export function renderUI(ssrData, ssrConfig) {
     padding: 0 24px; color: #fff; font-size: 17px;
     outline: none; height: 100%;
   }
+
+  .search-btn {
+    width: 48px; height: 48px;
+    background: var(--accent); border: none; border-radius: 50%;
+    color: white; font-size: 18px; cursor: pointer;
+    margin-right: 4px;
+    display: flex; align-items: center; justify-content: center;
+    transition: 0.2s;
+  }
+  .search-btn:hover { background: #2563eb; transform: scale(1.05); }
+
+  /* 密码可见性切换 */
+  .pwd-wrap {
+    position: relative;
+  }
+  .pwd-toggle {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: #94a3b8;
+    cursor: pointer; font-size: 18px; padding: 4px;
+  }
+  .pwd-toggle:hover { color: #fff; }
 
   /* 网格布局 */
   .grid {
@@ -353,6 +375,7 @@ export function renderUI(ssrData, ssrConfig) {
   </div>
   <div class="search-input-box">
     <input class="search-input" id="search-input" placeholder="Google 搜索..." autocomplete="off">
+    <button class="search-btn" onclick="doSearch()" title="搜索">🔍</button>
   </div>
 </div>
 
@@ -411,7 +434,10 @@ export function renderUI(ssrData, ssrConfig) {
 <!-- 弹窗：登录 -->
 <div class="modal-overlay" id="m-auth"><div class="modal">
   <h3>管理员登录</h3>
-  <div class="form-group"><input type="password" id="auth-pwd" placeholder="输入后台密码" onkeydown="if(event.key==='Enter') doLogin()"></div>
+  <div class="form-group pwd-wrap">
+    <input type="password" id="auth-pwd" placeholder="输入后台密码" onkeydown="if(event.key==='Enter') doLogin()">
+    <button type="button" class="pwd-toggle" onclick="togglePwd()" title="显示/隐藏密码">👁️</button>
+  </div>
   <div class="btn-row">
     <button class="btn btn-ghost" onclick="closeModals()">取消</button>
     <button class="btn btn-primary" onclick="doLogin()">登录</button>
@@ -910,6 +936,33 @@ function setEngine(el) {
   input.value = '';
   input.focus();
   renderGrid();
+}
+
+// 点击搜索按钮
+function doSearch() {
+  const input = document.getElementById('search-input');
+  const val = input.value.trim();
+  if (!val) return;
+  
+  if (STATE.searchType === 'site') {
+    // 站内搜索已通过 input 事件实时筛选
+    return;
+  }
+  window.open(STATE.searchUrl + encodeURIComponent(val));
+  input.value = '';
+}
+
+// 切换密码可见性
+function togglePwd() {
+  const pwd = document.getElementById('auth-pwd');
+  const btn = document.querySelector('.pwd-toggle');
+  if (pwd.type === 'password') {
+    pwd.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    pwd.type = 'password';
+    btn.textContent = '👁️';
+  }
 }
 
 function setupDrag(className, dropHandler) {
