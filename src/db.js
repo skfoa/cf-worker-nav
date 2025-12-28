@@ -31,7 +31,7 @@ export class DAO {
 
     // 2. 动态构建查询
     // 未登录时，分类必须是非私有的 (is_private=0 或 null)
-    const catSql = isLogin 
+    const catSql = isLogin
       ? "SELECT * FROM categories ORDER BY sort_order ASC, id ASC"
       : "SELECT * FROM categories WHERE COALESCE(is_private, 0) = 0 ORDER BY sort_order ASC, id ASC";
 
@@ -68,7 +68,7 @@ export class DAO {
   // ===========================================
   // Token 管理 (Token Management)
   // ===========================================
-  
+
   async validateToken(inputToken) {
     if (!inputToken) return false;
     const inputHash = await this._hash(inputToken);
@@ -123,8 +123,9 @@ export class DAO {
 
   async batchUpdateCategoriesOrder(items) {
     if (!items?.length) return { success: true, meta: { changes: 0 } };
-    const stmts = items.map(item => 
-      this.db.prepare("UPDATE categories SET sort_order = ? WHERE id = ?").bind(item.sort_order, item.id)
+    const now = this._now();
+    const stmts = items.map(item =>
+      this.db.prepare("UPDATE categories SET sort_order = ?, updated_at = ? WHERE id = ?").bind(item.sort_order, now, item.id)
     );
     return await this.db.batch(stmts);
   }
@@ -142,9 +143,9 @@ export class DAO {
   }
 
   async updateLink({ id, category_id, title, url, description, icon, is_private }) {
-    if (category_id === undefined && title === undefined && url === undefined && 
-        description === undefined && icon === undefined && is_private === undefined) {
-        return { success: true, meta: { changes: 0 } };
+    if (category_id === undefined && title === undefined && url === undefined &&
+      description === undefined && icon === undefined && is_private === undefined) {
+      return { success: true, meta: { changes: 0 } };
     }
     let sql = "UPDATE links SET updated_at = ?";
     const args = [this._now()];
@@ -155,7 +156,7 @@ export class DAO {
     if (icon !== undefined) { sql += ", icon = ?"; args.push(icon); }
     // 🛠️ 修复：更新时包含 is_private 字段
     if (is_private !== undefined) { sql += ", is_private = ?"; args.push(Number(is_private)); }
-    
+
     sql += " WHERE id = ?";
     args.push(id);
     return await this.db.prepare(sql).bind(...args).run();
@@ -167,13 +168,14 @@ export class DAO {
 
   async batchUpdateLinksOrder(items) {
     if (!items?.length) return { success: true, meta: { changes: 0 } };
+    const now = this._now();
     const stmts = items.map(item => {
       if (item.category_id !== undefined) {
-        return this.db.prepare("UPDATE links SET sort_order = ?, category_id = ? WHERE id = ?")
-          .bind(item.sort_order, item.category_id, item.id);
+        return this.db.prepare("UPDATE links SET sort_order = ?, category_id = ?, updated_at = ? WHERE id = ?")
+          .bind(item.sort_order, item.category_id, now, item.id);
       } else {
-        return this.db.prepare("UPDATE links SET sort_order = ? WHERE id = ?")
-          .bind(item.sort_order, item.id);
+        return this.db.prepare("UPDATE links SET sort_order = ?, updated_at = ? WHERE id = ?")
+          .bind(item.sort_order, now, item.id);
       }
     });
     return await this.db.batch(stmts);
@@ -209,10 +211,10 @@ export class DAO {
   // ===========================================
   // 批量导入 (Optimized Batch Import)
   // ===========================================
-  
+
   async importData(data) {
     if (!Array.isArray(data)) throw new Error("Invalid format: Root must be an array");
-    
+
     const now = this._now();
 
     // 1. 预读取现有分类 (Title -> ID)
@@ -230,7 +232,7 @@ export class DAO {
       if (catTitle && !catMap.has(catTitle) && !newCatNames.has(catTitle)) {
         newCatStmts.push(
           this.db.prepare("INSERT INTO categories (title, is_private, created_at, updated_at) VALUES (?, 0, ?, ?)")
-          .bind(catTitle, now, now)
+            .bind(catTitle, now, now)
         );
         newCatNames.add(catTitle);
       }
@@ -239,7 +241,7 @@ export class DAO {
     if (newCatStmts.length > 0) {
       // 执行批量插入新分类
       await this.db.batch(newCatStmts);
-      
+
       // 3. 重新获取完整 Map
       existingCats = await this.db.prepare("SELECT id, title FROM categories").all();
       (existingCats.results || []).forEach(c => catMap.set(c.title, c.id));
@@ -253,23 +255,23 @@ export class DAO {
 
       if (catId && Array.isArray(group.items)) {
         for (const item of group.items) {
-           // 🛠️ 修复：导入时显式设置 is_private = 0 (公开)
-           linkStmts.push(this.db.prepare(
-             `INSERT INTO links (category_id, title, url, description, icon, is_private, created_at, updated_at) 
+          // 🛠️ 修复：导入时显式设置 is_private = 0 (公开)
+          linkStmts.push(this.db.prepare(
+            `INSERT INTO links (category_id, title, url, description, icon, is_private, created_at, updated_at) 
               VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
-           ).bind(catId, item.name||item.title, item.url, item.description||'', item.icon||'', now, now));
+          ).bind(catId, item.name || item.title, item.url, item.description || '', item.icon || '', now, now));
         }
       }
     }
 
     // 5. 分片执行链接插入
     if (linkStmts.length > 0) {
-      const CHUNK_SIZE = 50; 
+      const CHUNK_SIZE = 50;
       for (let i = 0; i < linkStmts.length; i += CHUNK_SIZE) {
         await this.db.batch(linkStmts.slice(i, i + CHUNK_SIZE));
       }
     }
-    
+
     return { success: true, count: linkStmts.length, categories_added: newCatStmts.length };
   }
 }
