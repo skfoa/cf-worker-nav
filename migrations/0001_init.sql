@@ -1,7 +1,7 @@
 -- Migration number: 0001   2025-12-29
 -- Complete Schema with Security Audit Fixes
 -- ⚠️ WARNING: Contains DROP TABLE statements for development reset only!
--- ⚠️ Do NOT run on production databases with existing data!
+-- ⚠️ Do NOT run on production databases with existing data! 
 
 -- ==========================================
 -- 1. Categories (分类表)
