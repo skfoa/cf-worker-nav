@@ -5,32 +5,52 @@ import { renderUI } from './ui.js';
 // 1. 安全工具与全局配置
 // ==============================================
 
-// 防时序攻击的字符串比对
-function safeCompare(a, b) {
-  if (!a || !b || a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+// 🔒 HTML 转义防止 XSS
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Max-Age': '86400',
-};
+// 🔒 时序安全的字符串比对 (使用 Web Crypto API)
+async function safeCompare(a, b) {
+  if (!a || !b) return false;
+  const encoder = new TextEncoder();
+  const aBuf = encoder.encode(a);
+  const bBuf = encoder.encode(b);
 
-function json(data, status = 200) {
+  // 长度不等时仍需执行伪比较以防止长度泄漏
+  if (aBuf.byteLength !== bBuf.byteLength) {
+    // 执行一次伪比较，消耗相同时间
+    await crypto.subtle.timingSafeEqual(aBuf, aBuf);
+    return false;
+  }
+
+  return crypto.subtle.timingSafeEqual(aBuf, bBuf);
+}
+
+// 🔒 CORS 配置 - 可通过 env.ALLOWED_ORIGIN 限制来源
+function getCorsHeaders(env) {
+  return {
+    'Access-Control-Allow-Origin': env?.ALLOWED_ORIGIN || '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+  };
+}
+
+function json(data, status = 200, env = null) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+    headers: { 'Content-Type': 'application/json', ...getCorsHeaders(env) }
   });
 }
 
-function errorResp(msg, status = 500) {
-  return json({ error: msg, success: false }, status);
+function errorResp(msg, status = 500, env = null) {
+  return json({ error: msg, success: false }, status, env);
 }
 
 export default {
@@ -47,13 +67,13 @@ export default {
       : url.pathname;
 
     const method = request.method;
-    const dao = new DAO(env.DB);
+    const dao = new DAO(env.DB, env);
 
     // ==========================================
     // 2. CORS Preflight
     // ==========================================
     if (method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return new Response(null, { status: 204, headers: getCorsHeaders(env) });
     }
 
     // ==========================================
@@ -72,7 +92,7 @@ export default {
     // Level 1: Root 身份 (最高权限)
     let isRoot = false;
     if (env.PASSWORD && token) {
-      isRoot = safeCompare(token, env.PASSWORD);
+      isRoot = await safeCompare(token, env.PASSWORD);
     }
 
     // Level 2: User 身份 (API 用户)
@@ -102,7 +122,7 @@ export default {
         background_color: "#1a1a1a",
         theme_color: "#1a1a1a",
         icons: [{ src: "https://cdn-icons-png.flaticon.com/512/1006/1006771.png", sizes: "192x192", type: "image/png" }]
-      }), { headers: { "content-type": "application/json", ...CORS_HEADERS } });
+      }), { headers: { "content-type": "application/json", ...getCorsHeaders(env) } });
     }
 
     // [GET] 健康检查
@@ -133,10 +153,11 @@ export default {
           headers: { "content-type": "text/html;charset=UTF-8" }
         });
       } catch (e) {
+        // 🔒 XSS 修复：转义错误信息防止反射型攻击
         return new Response(
           `<!DOCTYPE html><html><body style="background:#111;color:#fff;font-family:sans-serif;padding:2rem;">
            <h1>🚧 System Error</h1>
-           <p>${e.message}</p>
+           <p>${escapeHtml(e.message)}</p>
            </body></html>`,
           { status: 500, headers: { "content-type": "text/html" } }
         );
