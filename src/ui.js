@@ -346,12 +346,16 @@ export function renderUI(ssrData, ssrConfig) {
   /* Toast 提示 */
   #toast {
     position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-100%);
-    background: rgba(59, 130, 246, 0.9); color: white;
-    padding: 10px 20px; border-radius: 50px; font-size: 14px; font-weight: 500;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 300;
-    transition: 0.3s; opacity: 0; pointer-events: none;
+    background: rgba(59, 130, 246, 0.95); color: white;
+    padding: 12px 24px; border-radius: 12px; font-size: 14px; font-weight: 500;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4); z-index: 300;
+    transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); opacity: 0; pointer-events: none;
+    max-width: 90%; text-align: center; line-height: 1.5;
+    backdrop-filter: blur(10px);
   }
   #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  #toast.error { background: rgba(239, 68, 68, 0.95); }
+  #toast.success { background: rgba(34, 197, 94, 0.95); }
 
 </style>
 </head>
@@ -658,7 +662,7 @@ async function deleteCat(id, e) {
       await refreshData();
       showToast("分类已删除");
     } catch (err) {
-      alert(err.message);
+      showToast('❌ ' + err.message, 'error');
     }
   }
 }
@@ -670,7 +674,7 @@ async function deleteLink(id) {
       await refreshData();
       showToast("链接已删除");
     } catch (err) {
-      alert(err.message);
+      showToast('❌ ' + err.message, 'error');
     }
   }
 }
@@ -738,11 +742,11 @@ async function doLogin() {
       location.reload();
     } else {
       APP.auth = '';
-      alert("密码错误");
+      showToast('❌ 密码错误', 'error');
     }
   } catch (e) { 
     APP.auth = '';
-    alert("登录失败: " + e.message); 
+    showToast('❌ 登录失败: ' + e.message, 'error'); 
   }
 }
 
@@ -886,14 +890,14 @@ async function importData(input) {
       if (!confirm('确认导入 ' + json.length + ' 个分类？这将合并现有数据。')) return;
       
       const res = await api('/api/import', json);
-      let msg = '导入成功！新增分类: ' + res.categories_added + '，新增链接: ' + res.count;
+      let msg = '✅ 导入成功！新增分类: ' + res.categories_added + '，新增链接: ' + res.count;
       if (res.skipped_count > 0) {
-        msg += '\\n⚠️ 跳过了 ' + res.skipped_count + ' 个无效链接 (非 http/https)';
+        msg += ' (跳过 ' + res.skipped_count + ' 个无效链接)';
       }
-      alert(msg);
-      location.reload();
+      showToast(msg, 'success');
+      setTimeout(() => location.reload(), 1500);
     } catch (err) {
-      alert("导入失败: " + err.message);
+      showToast('❌ 导入失败: ' + err.message, 'error');
     }
   };
   reader.readAsText(file);
@@ -1034,11 +1038,14 @@ async function handleLinkDrop(src, target) {
   await api('/api/link/reorder', cat.items.map((i, idx) => ({ id: i.id, sort_order: idx })));
 }
 
-function showToast(msg) {
+function showToast(msg, type = 'info') {
   const t = document.getElementById('toast');
   t.innerText = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+  t.className = 'show' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.className = '', 300);
+  }, type === 'error' ? 4000 : 3000);
 }
 
 </script>
