@@ -474,6 +474,10 @@ export function renderUI(ssrData, ssrConfig) {
  * 核心逻辑
  */
 const APP = ${safeState};
+
+// 🔒 客户端 HTML 转义函数 (防 XSS)
+const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+
 const STATE = {
   activeCatId: 0,
   isEditing: false,
@@ -596,8 +600,8 @@ function renderGrid(customItems = null) {
 
     return \`
     <div class="card-wrap" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}">
-      <a class="card" href="\${item.url}" target="_blank" onclick="\${STATE.isEditing ? 'return false' : ''}">
-        <img src="\${icon}" loading="lazy" onerror="this.src='\${fallback}'">
+      <a class="card" href="\${esc(item.url)}" target="_blank" onclick="\${STATE.isEditing ? 'return false' : ''}">
+        <img src="\${esc(icon)}" loading="lazy" onerror="this.src='\${esc(fallback)}'">
         <span>\${esc(item.title)}</span>
       </a>
       <!-- 链接删除/编辑按钮 (仅编辑模式显示) -->
@@ -882,7 +886,11 @@ async function importData(input) {
       if (!confirm('确认导入 ' + json.length + ' 个分类？这将合并现有数据。')) return;
       
       const res = await api('/api/import', json);
-      alert('导入成功！新增分类: ' + res.categories_added + '，新增链接: ' + res.count);
+      let msg = '导入成功！新增分类: ' + res.categories_added + '，新增链接: ' + res.count;
+      if (res.skipped_count > 0) {
+        msg += '\\n⚠️ 跳过了 ' + res.skipped_count + ' 个无效链接 (非 http/https)';
+      }
+      alert(msg);
       location.reload();
     } catch (err) {
       alert("导入失败: " + err.message);
@@ -1033,9 +1041,6 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 3000);
 }
 
-function esc(s) {
-  return s ? s.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : '';
-}
 </script>
 </body>
 </html>`;
