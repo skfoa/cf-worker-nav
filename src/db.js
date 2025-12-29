@@ -4,8 +4,10 @@
  * Force Build Update
  */
 export default class DAO {
-  constructor(db) {
+  constructor(db, env = {}) {
     this.db = db;
+    // 🔒 Token hashing salt - should be set via environment variable
+    this.salt = env.TOKEN_SALT || 'nav_default_salt_CHANGE_IN_PRODUCTION';
   }
 
   _now() {
@@ -13,10 +15,10 @@ export default class DAO {
   }
 
   /**
-   * 辅助方法：计算 SHA-256 哈希
+   * 辅助方法：计算 SHA-256 哈希（带盐值防彩虹表攻击）
    */
   async _hash(input) {
-    const msgBuffer = new TextEncoder().encode(input);
+    const msgBuffer = new TextEncoder().encode(input + this.salt);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -121,7 +123,16 @@ export default class DAO {
   }
 
   async deleteCategory(id) {
-    return await this.db.prepare("DELETE FROM categories WHERE id = ?").bind(id).run();
+    try {
+      return await this.db.prepare("DELETE FROM categories WHERE id = ?").bind(id).run();
+    } catch (err) {
+      // Handle ON DELETE RESTRICT constraint violation
+      if (err.message?.includes('FOREIGN KEY constraint failed') ||
+        err.message?.includes('SQLITE_CONSTRAINT')) {
+        throw new Error('无法删除：请先清空该分类下的所有链接');
+      }
+      throw err;
+    }
   }
 
   async batchUpdateCategoriesOrder(items) {
@@ -253,17 +264,27 @@ export default class DAO {
 
     // 4. 构建所有链接的插入语句
     const linkStmts = [];
+    let skippedCount = 0;
+    const skippedUrls = [];
     for (const group of data) {
       const catTitle = group.category || group.title;
       const catId = catMap.get(catTitle);
 
       if (catId && Array.isArray(group.items)) {
         for (const item of group.items) {
+          // 🔒 URL 协议校验：跳过非 http/https URL 以符合 Migration 0003 约束
+          const url = item.url || '';
+          if (!/^https?:\/\//i.test(url)) {
+            console.warn(`[importData] Skipping invalid URL: ${url}`);
+            skippedCount++;
+            skippedUrls.push(url || '(empty)');
+            continue;
+          }
           // 🛠️ 修复：导入时显式设置 is_private = 0 (公开)
           linkStmts.push(this.db.prepare(
             `INSERT INTO links (category_id, title, url, description, icon, is_private, created_at, updated_at) 
               VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
-          ).bind(catId, item.name || item.title, item.url, item.description || '', item.icon || '', now, now));
+          ).bind(catId, item.name || item.title, url, item.description || '', item.icon || '', now, now));
         }
       }
     }
@@ -276,6 +297,12 @@ export default class DAO {
       }
     }
 
-    return { success: true, count: linkStmts.length, categories_added: newCatStmts.length };
+    return {
+      success: true,
+      count: linkStmts.length,
+      categories_added: newCatStmts.length,
+      skipped_count: skippedCount,
+      skipped_urls: skippedUrls.slice(0, 10) // 最多返回10个示例
+    };
   }
 }
