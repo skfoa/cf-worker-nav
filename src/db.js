@@ -50,14 +50,24 @@ export default class DAO {
            AND COALESCE(l.is_private, 0) = 0
          ORDER BY l.sort_order ASC, l.id ASC`;
 
-    // 3. 并行查询
-    const [catsData, linksData] = await Promise.all([
+    // 🔥 获取 Top 8 热门链接 (visits > 0, 仅公开)
+    const hotSql = `
+      SELECT * FROM links 
+      WHERE visits > 0 AND COALESCE(is_private, 0) = 0
+      ORDER BY visits DESC 
+      LIMIT 8
+    `;
+
+    // 3. 并行查询 (含热门链接)
+    const [catsData, linksData, hotData] = await Promise.all([
       this.db.prepare(catSql).all(),
-      this.db.prepare(linksSql).all()
+      this.db.prepare(linksSql).all(),
+      this.db.prepare(hotSql).all()
     ]);
 
     const categories = catsData.results || [];
     const links = linksData.results || [];
+    const hotLinks = hotData.results || [];
 
     // 4. 组装数据
     const nav = categories.map(cat => ({
@@ -65,7 +75,26 @@ export default class DAO {
       items: links.filter(l => l.category_id === cat.id)
     }));
 
+    // 5. 🔥 如果有热门链接，动态插入"常用推荐"虚拟分类
+    if (hotLinks.length > 0) {
+      nav.unshift({
+        id: -1,  // 虚拟 ID
+        title: "🔥 常用推荐",
+        items: hotLinks,
+        is_private: 0,
+        sort_order: -999  // 保证排在最前
+      });
+    }
+
     return { nav, config };
+  }
+
+  // 🔥 点击计数 (用于常用推荐)
+  async incrementVisit(id) {
+    // 仅更新 visits，不触发 updated_at 以免影响排序
+    return await this.db.prepare(
+      "UPDATE links SET visits = visits + 1 WHERE id = ?"
+    ).bind(id).run();
   }
 
   // ===========================================
@@ -277,32 +306,3 @@ export default class DAO {
           if (!/^https?:\/\//i.test(url)) {
             console.warn(`[importData] Skipping invalid URL: ${url}`);
             skippedCount++;
-            skippedUrls.push(url || '(empty)');
-            continue;
-          }
-          // 🛠️ 修复：导入时显式设置 is_private = 0 (公开)
-          linkStmts.push(this.db.prepare(
-            `INSERT INTO links (category_id, title, url, description, icon, is_private, created_at, updated_at) 
-              VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
-          ).bind(catId, item.name || item.title, url, item.description || '', item.icon || '', now, now));
-        }
-      }
-    }
-
-    // 5. 分片执行链接插入
-    if (linkStmts.length > 0) {
-      const CHUNK_SIZE = 50;
-      for (let i = 0; i < linkStmts.length; i += CHUNK_SIZE) {
-        await this.db.batch(linkStmts.slice(i, i + CHUNK_SIZE));
-      }
-    }
-
-    return {
-      success: true,
-      count: linkStmts.length,
-      categories_added: newCatStmts.length,
-      skipped_count: skippedCount,
-      skipped_urls: skippedUrls.slice(0, 10) // 最多返回10个示例
-    };
-  }
-}
