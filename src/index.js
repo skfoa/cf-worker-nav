@@ -170,9 +170,23 @@ export default {
 
     if (path.startsWith('/api/')) {
 
+      // 🔥 点击上报接口 (无需鉴权，公开可用)
+      if (path === '/api/visit' && method === 'POST') {
+        try {
+          const body = await request.json().catch(() => ({}));
+          if (body.id) {
+            // Fire-and-forget: 不等待数据库返回，加快响应速度
+            dao.incrementVisit(body.id).catch(() => { });
+          }
+          return json({ status: 'ok' }, 200, env);
+        } catch (e) {
+          return json({ status: 'ok' }, 200, env); // 即使失败也返回成功，不影响用户体验
+        }
+      }
+
       // 🔒 鉴权拦截
       if (!isUser) {
-        return json({ error: "Unauthorized" }, 401);
+        return json({ error: "Unauthorized" }, 401, env);
       }
 
       try {
