@@ -606,8 +606,8 @@ function renderGrid(customItems = null) {
     } catch (e) {
       domain = 'example.com'; // URL 格式错误时使用默认值
     }
-    // 多层图标源：用户自定义 → Google → 本地默认
-    const icon = item.icon || \`https://www.google.com/s2/favicons?domain=\${domain}&sz=64\`;
+    // 多层图标源：用户自定义 → DuckDuckGo → 本地默认
+    const icon = item.icon || \`https://icons.duckduckgo.com/ip3/\${domain}.ico\`;
     // 默认图标：使用 data URI 显示首字母
     const initial = (item.title || 'N').charAt(0).toUpperCase();
     const defaultIcon = \`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><rect width='48' height='48' rx='8' fill='%233b82f6'/><text x='24' y='32' font-size='24' fill='white' text-anchor='middle' font-family='sans-serif'>\${initial}</text></svg>\`;
