@@ -1,7 +1,7 @@
 -- Migration number: 0001   2025-12-29
 -- Complete Schema with Security Audit Fixes
 -- ⚠️ WARNING: Contains DROP TABLE statements for development reset only!
--- ⚠️ Do NOT run on production databases with existing data! 
+-- ⚠️ Do NOT run on production databases with existing data!
 
 -- ==========================================
 -- 1. Categories (分类表)
@@ -30,6 +30,8 @@ CREATE TABLE links (
     icon TEXT DEFAULT '',
     sort_order INTEGER NOT NULL DEFAULT 0,
     is_private INTEGER NOT NULL DEFAULT 0 CHECK(is_private IN (0, 1)),
+    -- 🔥 点击计数：用于常用推荐功能
+    visits INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch() * 1000),
     updated_at INTEGER DEFAULT (unixepoch() * 1000),
     -- 🔒 使用 RESTRICT 防止误删导致数据丢失
@@ -69,6 +71,8 @@ CREATE INDEX IF NOT EXISTS idx_links_sort ON links(sort_order);
 CREATE INDEX IF NOT EXISTS idx_cat_sort ON categories(sort_order);
 CREATE INDEX IF NOT EXISTS idx_links_private ON links(is_private);
 CREATE INDEX IF NOT EXISTS idx_cat_private ON categories(is_private);
+-- 🔥 点击量索引：优化常用推荐查询性能
+CREATE INDEX IF NOT EXISTS idx_links_visits ON links(visits DESC);
 
 -- ==========================================
 -- 6. Triggers (自动更新 updated_at)
@@ -99,15 +103,16 @@ END;
 -- ==========================================
 -- 7. Seed Data (初始数据)
 -- ==========================================
-INSERT INTO categories (title, sort_order) VALUES ('常用推荐', 0);
+-- 注意："常用推荐" 现在是动态生成的虚拟分类，不再创建静态分类
+INSERT INTO categories (title, sort_order) VALUES ('工具站', 0);
 
 INSERT INTO links (category_id, title, url, description, sort_order) 
 SELECT id, 'GitHub', 'https://github.com', 'Where the world builds software', 0 
-FROM categories WHERE title='常用推荐';
+FROM categories WHERE title='工具站';
 
 INSERT INTO links (category_id, title, url, description, sort_order) 
 SELECT id, 'Cloudflare', 'https://dash.cloudflare.com', 'Web Performance & Security', 1 
-FROM categories WHERE title='常用推荐';
+FROM categories WHERE title='工具站';
 
 INSERT OR IGNORE INTO configs (key, value, description) VALUES 
 ('title', 'My Navigation', '网站标题'),
