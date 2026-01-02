@@ -306,3 +306,32 @@ export default class DAO {
           if (!/^https?:\/\//i.test(url)) {
             console.warn(`[importData] Skipping invalid URL: ${url}`);
             skippedCount++;
+            skippedUrls.push(url || '(empty)');
+            continue;
+          }
+          // 🛠️ 修复：导入时显式设置 is_private = 0 (公开)
+          linkStmts.push(this.db.prepare(
+            `INSERT INTO links (category_id, title, url, description, icon, is_private, created_at, updated_at) 
+              VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
+          ).bind(catId, item.name || item.title, url, item.description || '', item.icon || '', now, now));
+        }
+      }
+    }
+
+    // 5. 分片执行链接插入
+    if (linkStmts.length > 0) {
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < linkStmts.length; i += CHUNK_SIZE) {
+        await this.db.batch(linkStmts.slice(i, i + CHUNK_SIZE));
+      }
+    }
+
+    return {
+      success: true,
+      count: linkStmts.length,
+      categories_added: newCatStmts.length,
+      skipped_count: skippedCount,
+      skipped_urls: skippedUrls.slice(0, 10) // 最多返回10个示例
+    };
+  }
+}
