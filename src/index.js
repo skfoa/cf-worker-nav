@@ -175,11 +175,12 @@ export default {
         try {
           const body = await request.json().catch(() => ({}));
           if (body.id) {
-            // Fire-and-forget: 不等待数据库返回，加快响应速度
-            dao.incrementVisit(body.id).catch(() => { });
+            // 等待数据库更新完成
+            await dao.incrementVisit(body.id);
           }
           return json({ status: 'ok' }, 200, env);
         } catch (e) {
+          console.error('[/api/visit] Error:', e.message);
           return json({ status: 'ok' }, 200, env); // 即使失败也返回成功，不影响用户体验
         }
       }
