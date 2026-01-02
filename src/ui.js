@@ -604,7 +604,8 @@ function renderGrid(customItems = null) {
 
     return \`
     <div class="card-wrap" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}">
-      <a class="card" href="\${esc(item.url)}" target="_blank" onclick="\${STATE.isEditing ? 'return false' : ''}">
+      <a class="card" href="\${esc(item.url)}" target="_blank" 
+         onclick="trackClick(\${item.id}); \${STATE.isEditing ? 'return false' : ''}">
         <img src="\${esc(icon)}" loading="lazy" onerror="this.src='\${esc(fallback)}'">
         <span>\${esc(item.title)}</span>
       </a>
@@ -1046,6 +1047,20 @@ function showToast(msg, type = 'info') {
     t.classList.remove('show');
     setTimeout(() => t.className = '', 300);
   }, type === 'error' ? 4000 : 3000);
+}
+
+// 🔥 点击上报函数 (用于常用推荐统计)
+function trackClick(id) {
+  // 编辑模式下不记录点击
+  if (STATE.isEditing) return;
+  
+  // 使用 keepalive 确保页面跳转后请求仍能发送
+  fetch('/api/visit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: Number(id) }),
+    keepalive: true
+  }).catch(() => {}); // 忽略错误，不打扰用户
 }
 
 </script>
