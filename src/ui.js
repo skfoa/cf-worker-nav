@@ -388,7 +388,7 @@ export function renderUI(ssrData, ssrConfig) {
 
 <!-- 底部信息 -->
 <div class="footer">
-  <p>Copyright © 2025 Nav-Item | Powered by Cloudflare Worker</p>
+  <p>Made by <a href="https://github.com/skfoa/cf-worker-nav/" target="_blank">skfoa</a> | Powered by Cloudflare Workers</p>
 </div>
 
 <!-- 底部功能栏 (Dock) -->
