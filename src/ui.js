@@ -599,14 +599,17 @@ function renderGrid(customItems = null) {
     } catch (e) {
       domain = 'example.com'; // URL 格式错误时使用默认值
     }
-    const fallback = \`https://icons.duckduckgo.com/ip3/\${domain}.ico\`;
-    const icon = item.icon || \`https://api.iowen.cn/favicon/\${domain}.png\`;
+    // 多层图标源：用户自定义 → Google → 本地默认
+    const icon = item.icon || \`https://www.google.com/s2/favicons?domain=\${domain}&sz=64\`;
+    // 默认图标：使用 data URI 显示首字母
+    const initial = (item.title || 'N').charAt(0).toUpperCase();
+    const defaultIcon = \`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><rect width='48' height='48' rx='8' fill='%233b82f6'/><text x='24' y='32' font-size='24' fill='white' text-anchor='middle' font-family='sans-serif'>\${initial}</text></svg>\`;
 
     return \`
     <div class="card-wrap" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}">
       <a class="card" href="\${esc(item.url)}" target="_blank" 
          onclick="trackClick(\${item.id}); \${STATE.isEditing ? 'return false' : ''}">
-        <img src="\${esc(icon)}" loading="lazy" onerror="this.src='\${esc(fallback)}'">
+        <img src="\${esc(icon)}" loading="lazy" onerror="this.onerror=null; this.src='\${defaultIcon}'">
         <span>\${esc(item.title)}</span>
       </a>
       <!-- 链接删除/编辑按钮 (仅编辑模式显示) -->
