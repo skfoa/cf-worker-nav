@@ -386,13 +386,10 @@ export function renderUI(ssrData, ssrConfig) {
 <!-- 内容网格 -->
 <main class="grid" id="grid"></main>
 
-<!-- 底部信息 -->
-<div class="footer">
-  <p>Made by <a href="https://github.com/skfoa/cf-worker-nav/" target="_blank">skfoa</a> | Powered by Cloudflare Workers</p>
-</div>
 
 <!-- 底部功能栏 (Dock) -->
 <div class="dock">
+  <a class="dock-item" href="https://github.com/skfoa/cf-worker-nav/" target="_blank" title="GitHub 项目">📦</a>
   <div class="dock-item" onclick="toggleEditMode()" id="btn-edit" title="布局编辑 (删除/排序)">⚙️</div>
   <div class="dock-item" onclick="openLinkModal()" title="添加链接">➕</div>
   <div class="dock-item" onclick="openCatModal()" title="添加分类">📁</div>
@@ -470,6 +467,16 @@ export function renderUI(ssrData, ssrConfig) {
       <button class="btn btn-ghost" onclick="document.getElementById('file-import').click()" style="font-size:12px">📥 导入 JSON</button>
     </div>
     <input type="file" id="file-import" style="display:none" accept=".json" onchange="importData(this)">
+  </div>
+</div></div>
+
+<!-- 弹窗：自定义确认框 -->
+<div class="modal-overlay" id="m-confirm"><div class="modal" style="max-width:340px">
+  <h3 id="confirm-title">确认操作</h3>
+  <p id="confirm-msg" style="color:#94a3b8;font-size:14px;line-height:1.6"></p>
+  <div class="btn-row">
+    <button class="btn btn-ghost" onclick="closeModals()">取消</button>
+    <button class="btn" id="confirm-btn" style="background:var(--danger)" onclick="doConfirm()">确认删除</button>
   </div>
 </div></div>
 
@@ -650,16 +657,31 @@ function toggleEditMode() {
   renderGrid();
 }
 
-// === 删除功能 (你之前提到的重点缺失部分) ===
+// === 删除功能 ===
+
+// 自定义确认框状态
+let confirmCallback = null;
+
+function showConfirm(title, msg, btnText, callback) {
+  document.getElementById('confirm-title').innerText = title;
+  document.getElementById('confirm-msg').innerText = msg;
+  document.getElementById('confirm-btn').innerText = btnText || '确认';
+  confirmCallback = callback;
+  document.getElementById('m-confirm').style.display = 'flex';
+}
+
+function doConfirm() {
+  closeModals();
+  if (confirmCallback) confirmCallback();
+  confirmCallback = null;
+}
 
 async function deleteCat(id, e) {
-  // 阻止冒泡，防止触发 switchCat
   if (e) e.stopPropagation();
   
-  if (confirm("⚠️ 警告：确定删除此分类吗？\\n该分类下的所有链接也会被删除！")) {
+  showConfirm('⚠️ 删除分类', '确定删除此分类吗？该分类下的所有链接也会被删除！', '确认删除', async () => {
     try {
       await api('/api/category/delete', { id });
-      // 如果删除了当前选中的分类，重置选中项
       if (STATE.activeCatId == id) {
         STATE.activeCatId = APP.data[0] ? APP.data[0].id : 0;
       }
@@ -668,11 +690,11 @@ async function deleteCat(id, e) {
     } catch (err) {
       showToast('❌ ' + err.message, 'error');
     }
-  }
+  });
 }
 
 async function deleteLink(id) {
-  if (confirm("确定删除此链接吗？")) {
+  showConfirm('⚠️ 删除链接', '确定删除此链接吗？', '确认删除', async () => {
     try {
       await api('/api/link/delete', { id });
       await refreshData();
@@ -680,7 +702,7 @@ async function deleteLink(id) {
     } catch (err) {
       showToast('❌ ' + err.message, 'error');
     }
-  }
+  });
 }
 
 // === API 与 数据交互 ===
