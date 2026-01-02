@@ -1054,13 +1054,17 @@ function trackClick(id) {
   // 编辑模式下不记录点击
   if (STATE.isEditing) return;
   
+  console.log('[trackClick] Sending visit for id:', id);
+  
   // 使用 keepalive 确保页面跳转后请求仍能发送
   fetch('/api/visit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: Number(id) }),
     keepalive: true
-  }).catch(() => {}); // 忽略错误，不打扰用户
+  })
+  .then(res => console.log('[trackClick] Response:', res.status))
+  .catch(err => console.error('[trackClick] Error:', err));
 }
 
 </script>
