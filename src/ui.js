@@ -103,14 +103,16 @@ export function renderUI(ssrData, ssrConfig) {
   // 注入服务端数据
   // 注意：ssrData 本身就是 nav 数组，不需要再访问 .nav
   // 🔒 安全转义：防止 XSS + 防止模版字符串注入
-  // 🔒 安全转义：防止 XSS + 防止 JSON 截断
+  // 🔒 安全转义：防止 XSS + 防止 JSON 截断 + 防止外层模版字符串崩溃
   const safeState = JSON.stringify({
     data: ssrData || [],
     config: ssrConfig,
     auth: '',
     isRoot: false
-  }).replace(/</g, "\\u003c") // 防止 </script> 注入
-    .replace(/\u2028/g, "\\u2028") // Line Separator
+  }).replace(/</g, "\\u003c")       // 防止 </script> 注入
+    .replace(/`/g, "\\u0060")       // 🔧 必须转义！因为外层 renderUI 用的是 `...`
+    .replace(/\$/g, "\\u0024")      // 🔧 必须转义！防止 ${} 被解析
+    .replace(/\u2028/g, "\\u2028")  // Line Separator
     .replace(/\u2029/g, "\\u2029"); // Paragraph Separator
 
   return `<!DOCTYPE html>
