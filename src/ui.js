@@ -102,14 +102,15 @@ export function renderUI(ssrData, ssrConfig) {
 
   // 注入服务端数据
   // 注意：ssrData 本身就是 nav 数组，不需要再访问 .nav
-  // 🔒 安全转义：防止 XSS + 修复某些旧环境下的 JS 解析问题
+  // 🔒 安全转义：防止 XSS + 防止模版字符串注入
+  // 🔒 安全转义：防止 XSS + 防止 JSON 截断
   const safeState = JSON.stringify({
     data: ssrData || [],
     config: ssrConfig,
     auth: '',
     isRoot: false
-  }).replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")  // Line Separator
+  }).replace(/</g, "\\u003c") // 防止 </script> 注入
+    .replace(/\u2028/g, "\\u2028") // Line Separator
     .replace(/\u2029/g, "\\u2029"); // Paragraph Separator
 
   return `<!DOCTYPE html>
@@ -635,11 +636,14 @@ export function renderUI(ssrData, ssrConfig) {
   </div>
 </div></div>
 
+<!-- 🌟 工业级数据注入 (JSON Island) -->
+<script type="application/json" id="app-state">${safeState}</script>
 <script>
 /** 
  * 核心逻辑
  */
-const APP = ${safeState};
+// 解析 JSON 数据（此时没有任何语法风险）
+const APP = JSON.parse(document.getElementById('app-state').textContent);
 
 // 🔒 客户端 HTML 转义函数 (防 XSS)
 const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
