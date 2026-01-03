@@ -2,17 +2,115 @@
  * src/ui.js
  * Final Version: 修复空白页登录引导 + 增强删除功能可见性
  */
+
+// 🔒 私有模式：纯登录页面（不暴露任何内容给爬虫）
+export function renderLoginPage(ssrConfig) {
+  const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${esc(ssrConfig.TITLE)} - 登录</title>
+<link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: url('${esc(ssrConfig.BG_IMAGE)}') center/cover no-repeat fixed, #0f172a;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); z-index: -1;
+  }
+  .login-box {
+    background: rgba(30,41,59,0.95); padding: 40px;
+    border-radius: 20px; width: 90%; max-width: 380px;
+    box-shadow: 0 25px 80px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .login-box h1 { color: #fff; margin: 0 0 8px; font-size: 24px; text-align: center; }
+  .login-box p { color: #94a3b8; margin: 0 0 24px; font-size: 14px; text-align: center; }
+  .login-box input {
+    width: 100%; padding: 14px; margin-bottom: 16px;
+    background: #0f172a; border: 1px solid #334155;
+    border-radius: 10px; color: #fff; font-size: 15px; outline: none;
+  }
+  .login-box input:focus { border-color: #3b82f6; }
+  .login-box button {
+    width: 100%; padding: 14px; background: #3b82f6;
+    border: none; border-radius: 10px; color: #fff;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .login-box button:hover { background: #2563eb; }
+  .error { color: #ef4444; font-size: 13px; text-align: center; margin-top: 12px; display: none; }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <h1>🔐 私有站点</h1>
+  <p>此站点需要管理员权限才能访问</p>
+  <input type="password" id="pwd" placeholder="请输入密码" onkeydown="if(event.key==='Enter') login()">
+  <button onclick="login()">登录</button>
+  <div class="error" id="err"></div>
+</div>
+<script>
+async function login() {
+  const pwd = document.getElementById('pwd').value;
+  if (!pwd) return;
+  try {
+    const res = await fetch('/api/auth/verify', {
+      headers: { 'Authorization': 'Bearer ' + pwd }
+    });
+    const json = await res.json();
+    if (json.status === 'ok') {
+      localStorage.setItem('nav_token', pwd);
+      // 🔧 UX 优化：直接跳转避免闪烁
+      location.href = '/?auth=1';
+    } else {
+      showError('密码错误');
+    }
+  } catch (e) {
+    showError('登录失败: ' + e.message);
+  }
+}
+function showError(msg) {
+  const err = document.getElementById('err');
+  err.textContent = msg;
+  err.style.display = 'block';
+}
+// 检查是否已有 token
+(function() {
+  const token = localStorage.getItem('nav_token');
+  if (token) {
+    fetch('/api/auth/verify', { headers: { 'Authorization': 'Bearer ' + token } })
+      .then(r => r.json())
+      .then(j => { if (j.status === 'ok') location.href = '/?auth=1'; })
+      .catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
 export function renderUI(ssrData, ssrConfig) {
   const esc = (str) => String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#039;' }[m]));
 
   // 注入服务端数据
   // 注意：ssrData 本身就是 nav 数组，不需要再访问 .nav
+  // 🔒 安全转义：防止 XSS + 修复某些旧环境下的 JS 解析问题
   const safeState = JSON.stringify({
     data: ssrData || [],
     config: ssrConfig,
     auth: '',
     isRoot: false
-  }).replace(/</g, "\\u003c");
+  }).replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")  // Line Separator
+    .replace(/\u2029/g, "\\u2029"); // Paragraph Separator
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -22,6 +120,7 @@ export function renderUI(ssrData, ssrConfig) {
 <title>${esc(ssrConfig.TITLE)}</title>
 <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png">
 <style>
+  /* 🌙 深色主题 (默认) */
   :root {
     --glass-bg: rgba(30, 30, 30, 0.65);
     --glass-border: rgba(255, 255, 255, 0.12);
@@ -30,6 +129,28 @@ export function renderUI(ssrData, ssrConfig) {
     --text-main: #ffffff;
     --text-sub: #94a3b8;
     --radius: 16px;
+    --bg-overlay: rgba(15, 23, 42, 0.4);
+    --nav-bg: rgba(0, 0, 0, 0.95);
+    --search-bg: rgba(20, 20, 20, 0.8);
+    --modal-bg: #1e293b;
+    --input-bg: #0f172a;
+    --dock-bg: rgba(15, 15, 15, 0.9);
+  }
+
+  /* ☀️ 浅色主题 */
+  [data-theme="light"] {
+    --glass-bg: rgba(255, 255, 255, 0.75);
+    --glass-border: rgba(0, 0, 0, 0.1);
+    --accent: #2563eb;      
+    --danger: #dc2626;      
+    --text-main: #1e293b;
+    --text-sub: #64748b;
+    --bg-overlay: rgba(255, 255, 255, 0.3);
+    --nav-bg: rgba(255, 255, 255, 0.9);
+    --search-bg: rgba(255, 255, 255, 0.85);
+    --modal-bg: #ffffff;
+    --input-bg: #f1f5f9;
+    --dock-bg: rgba(255, 255, 255, 0.9);
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -37,27 +158,38 @@ export function renderUI(ssrData, ssrConfig) {
   body {
     margin: 0; padding: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background: url('${esc(ssrConfig.BG_IMAGE)}') center/cover fixed no-repeat, #0f172a;
+    background: #0f172a;
     color: var(--text-main);
     min-height: 100vh;
     padding-bottom: 120px;
-    user-select: none; /* 防止长按选中文本，利于拖拽 */
+    /* 📱 移除全局 user-select: none，允许长按菜单 */
   }
 
+  /* 📱 性能优化：将 fixed 背景图移到伪元素，避免 iOS Safari 滚动卡顿 */
+  body::after {
+    content: ''; position: fixed; inset: 0; z-index: -2;
+    background: url('${esc(ssrConfig.BG_IMAGE)}') center/cover no-repeat;
+    pointer-events: none;
+  }
+
+  /* 遮罩层 */
   body::before {
     content: ''; position: fixed; inset: 0; 
-    background: rgba(15, 23, 42, 0.4); 
-    z-index: -1; backdrop-filter: blur(0px); 
+    background: var(--bg-overlay); 
+    z-index: -1; backdrop-filter: blur(0px);
+    transition: background 0.3s ease;
+    pointer-events: none;
   }
 
   /* 导航栏 */
   .nav-header {
     position: sticky; top: 0; z-index: 50;
     min-height: 64px; 
-    background: linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 60%, rgba(0,0,0,0) 100%);
+    background: linear-gradient(to bottom, var(--nav-bg) 0%, rgba(0,0,0,0.5) 60%, rgba(0,0,0,0) 100%);
     padding-top: max(12px, env(safe-area-inset-top));
     padding-bottom: 16px;
     display: flex; justify-content: center; align-items: flex-end;
+    transition: background 0.3s ease;
   }
 
   .nav-scroll {
@@ -138,8 +270,8 @@ export function renderUI(ssrData, ssrConfig) {
 
   .search-input-box {
     display: flex; align-items: center;
-    background: rgba(20, 20, 20, 0.8);
-    border: 1px solid rgba(255,255,255,0.15);
+    background: var(--search-bg);
+    border: 1px solid var(--glass-border);
     border-radius: 24px; height: 56px;
     transition: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     box-shadow: 0 8px 30px rgba(0,0,0,0.3);
@@ -153,7 +285,7 @@ export function renderUI(ssrData, ssrConfig) {
 
   .search-input {
     flex: 1; background: transparent; border: none;
-    padding: 0 24px; color: #fff; font-size: 17px;
+    padding: 0 24px; color: var(--text-main); font-size: 17px;
     outline: none; height: 100%;
   }
 
@@ -201,6 +333,9 @@ export function renderUI(ssrData, ssrConfig) {
     backdrop-filter: blur(10px);
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     position: relative; overflow: hidden;
+    /* 📱 移动端优化：默认允许系统长按菜单(新标签页打开等) */
+    -webkit-touch-callout: default;
+    user-select: none; /* 保留禁止文本选中 */
   }
 
   .card:hover {
@@ -216,6 +351,17 @@ export function renderUI(ssrData, ssrConfig) {
     border-radius: 10px; object-fit: contain;
     filter: drop-shadow(0 4px 6px rgba(0,0,0,0.2));
   }
+  
+  /* 默认图标占位符 - 优化：避免每个卡片重复内联 SVG */
+  .card .icon-fallback {
+    width: 48px; height: 48px; margin-bottom: 12px;
+    border-radius: 10px;
+    background: var(--accent);
+    display: none; /* 默认隐藏，onerror 时显示 */
+    align-items: center; justify-content: center;
+    font-size: 24px; font-weight: 600; color: white;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
 
   .card span {
     font-size: 13px; font-weight: 500;
@@ -229,6 +375,8 @@ export function renderUI(ssrData, ssrConfig) {
   .editing .card {
     cursor: grab; border: 1px dashed var(--accent);
     animation: shake 0.3s infinite alternate;
+    /* 📱 编辑模式禁用长按菜单，防止与拖拽冲突 */
+    -webkit-touch-callout: none;
   }
   .editing .card:active { cursor: grabbing; }
   .dragging { opacity: 0.4; transform: scale(0.9); }
@@ -258,13 +406,14 @@ export function renderUI(ssrData, ssrConfig) {
 
   .dock {
     position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
-    background: rgba(15, 15, 15, 0.9);
+    background: var(--dock-bg);
     backdrop-filter: blur(20px);
     padding: 12px 24px; border-radius: 100px;
-    border: 1px solid rgba(255,255,255,0.15);
+    border: 1px solid var(--glass-border);
     display: flex; gap: 24px;
     box-shadow: 0 20px 50px rgba(0,0,0,0.6);
     z-index: 100;
+    transition: background 0.3s ease;
   }
 
   .dock-item {
@@ -313,26 +462,27 @@ export function renderUI(ssrData, ssrConfig) {
     animation: fadeIn 0.2s;
   }
   .modal {
-    background: #1e293b; width: 90%; max-width: 400px;
+    background: var(--modal-bg); width: 90%; max-width: 400px;
     padding: 24px; border-radius: 20px;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid var(--glass-border);
     box-shadow: 0 25px 80px rgba(0,0,0,0.8);
     transform: scale(0.95); opacity: 0;
     animation: popUp 0.3s forwards;
+    transition: background 0.3s ease;
   }
   @keyframes popUp { to { transform: scale(1); opacity: 1; } }
 
-  .modal h3 { margin: 0 0 20px 0; color: #fff; font-size: 18px; font-weight: 600; }
+  .modal h3 { margin: 0 0 20px 0; color: var(--text-main); font-size: 18px; font-weight: 600; }
   .form-group { margin-bottom: 16px; }
-  .form-label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px; }
+  .form-label { display: block; font-size: 13px; color: var(--text-sub); margin-bottom: 6px; }
   
   input, select {
     width: 100%; padding: 12px;
-    background: #0f172a; border: 1px solid #334155;
-    border-radius: 10px; color: #fff; font-size: 14px;
+    background: var(--input-bg); border: 1px solid var(--glass-border);
+    border-radius: 10px; color: var(--text-main); font-size: 14px;
     outline: none; transition: 0.2s;
   }
-  input:focus, select:focus { border-color: var(--accent); background: #020617; }
+  input:focus, select:focus { border-color: var(--accent); }
 
   .btn-row { display: flex; gap: 10px; margin-top: 24px; }
   .btn {
@@ -390,6 +540,7 @@ export function renderUI(ssrData, ssrConfig) {
 <!-- 底部功能栏 (Dock) -->
 <div class="dock">
   <a class="dock-item" href="https://github.com/skfoa/cf-worker-nav/" target="_blank" title="GitHub 项目">📦</a>
+  <div class="dock-item" onclick="toggleTheme()" id="btn-theme" title="切换主题">🌙</div>
   <div class="dock-item" onclick="toggleEditMode()" id="btn-edit" title="布局编辑 (删除/排序)">⚙️</div>
   <div class="dock-item" onclick="openLinkModal()" title="添加链接">➕</div>
   <div class="dock-item" onclick="openCatModal()" title="添加分类">📁</div>
@@ -456,11 +607,15 @@ export function renderUI(ssrData, ssrConfig) {
     <label class="form-label">背景图片 URL</label>
     <input id="s-bg">
   </div>
+  <div class="form-group" style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-sub)">
+    <input type="checkbox" id="s-private" style="width:auto">
+    <label for="s-private">🔒 私有模式 (首页需登录才能查看内容)</label>
+  </div>
   <div class="btn-row">
     <button class="btn btn-ghost" onclick="closeModals()">关闭</button>
     <button class="btn btn-primary" onclick="saveConfig()">保存设置</button>
   </div>
-  <div style="margin-top:20px;padding-top:15px;border-top:1px solid #334155;">
+  <div style="margin-top:20px;padding-top:15px;border-top:1px solid var(--glass-border);">
     <p class="form-label">数据备份</p>
     <div style="display:flex;gap:10px">
       <button class="btn btn-ghost" onclick="exportData()" style="font-size:12px">📤 导出 JSON</button>
@@ -493,7 +648,8 @@ const STATE = {
   activeCatId: 0,
   isEditing: false,
   searchType: 'google',
-  searchUrl: 'https://www.google.com/search?q='
+  searchUrl: 'https://www.google.com/search?q=',
+  theme: 'dark'  // 🌙 当前主题
 };
 
 // 搜索引擎配置
@@ -505,8 +661,46 @@ const ENGINES = {
   site:   { url: '', place: '输入关键词筛选本站链接...' }
 };
 
+// 🌙 主题切换
+function toggleTheme() {
+  const newTheme = STATE.theme === 'dark' ? 'light' : 'dark';
+  setTheme(newTheme);
+  localStorage.setItem('nav_theme', newTheme);
+  showToast(newTheme === 'light' ? '☀️ 已切换到浅色模式' : '🌙 已切换到深色模式');
+}
+
+function setTheme(theme) {
+  STATE.theme = theme;
+  if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  // 更新按钮图标
+  const btn = document.getElementById('btn-theme');
+  if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+}
+
+function initTheme() {
+  // 优先读取用户保存的偏好
+  const saved = localStorage.getItem('nav_theme');
+  if (saved) {
+    setTheme(saved);
+    return;
+  }
+  // 否则跟随系统偏好
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+    setTheme('light');
+  } else {
+    setTheme('dark');
+  }
+}
+
 // 初始化
 (async function init() {
+  // 🌙 优先初始化主题（避免闪烁）
+  initTheme();
+  
   const localToken = localStorage.getItem('nav_token');
   if (localToken) APP.auth = localToken;
 
@@ -606,17 +800,38 @@ function renderGrid(customItems = null) {
     } catch (e) {
       domain = 'example.com'; // URL 格式错误时使用默认值
     }
-    // 多层图标源：用户自定义 → DuckDuckGo → 本地默认
-    const icon = item.icon || \`https://icons.duckduckgo.com/ip3/\${domain}.ico\`;
-    // 默认图标：使用 data URI 显示首字母
+    
+    // 🔧 多级回退图标源策略 (国内优先，减少等待时间)
+    // 1. 用户自定义 icon (最高优先级)
+    // 2. Ico.moe (国内 CDN 加速，速度最快)
+    // 3. DuckDuckGo (国内可访问，较稳定)
+    // 4. Favicon.im (国外服务，图标质量高)
+    // 5. Google Favicon (质量高，但需代理)
+    // 6. 首字母占位符 (最终兜底)
+    const fallbackSources = [
+      \`https://ico.moe/domain/\${domain}\`,
+      \`https://icons.duckduckgo.com/ip3/\${domain}.ico\`,
+      \`https://favicon.im/\${domain}?larger=true\`,
+      \`https://www.google.com/s2/favicons?sz=64&domain=\${domain}\`
+    ];
+    
+    // 如果用户有自定义 icon，则它是第一优先级
+    const primaryIcon = item.icon || fallbackSources.shift();
+    
+    // 🔧 优化：首字母仅在所有源都失败时显示
     const initial = (item.title || 'N').charAt(0).toUpperCase();
-    const defaultIcon = \`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><rect width='48' height='48' rx='8' fill='%233b82f6'/><text x='24' y='32' font-size='24' fill='white' text-anchor='middle' font-family='sans-serif'>\${initial}</text></svg>\`;
+    
+    // 将剩余备用源编码到 data 属性，供 onerror 级联使用
+    const fallbacksJson = JSON.stringify(fallbackSources).replace(/"/g, '&quot;');
 
     return \`
     <div class="card-wrap" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}">
       <a class="card" href="\${esc(item.url)}" target="_blank" 
          onclick="trackClick(\${item.id}); \${STATE.isEditing ? 'return false' : ''}">
-        <img src="\${esc(icon)}" loading="lazy" onerror="this.onerror=null; this.src='\${defaultIcon}'">
+        <img src="\${esc(primaryIcon)}" loading="lazy" 
+             data-fallbacks="\${fallbacksJson}"
+             onerror="handleIconError(this)">
+        <div class="icon-fallback">\${initial}</div>
         <span>\${esc(item.title)}</span>
       </a>
       <!-- 链接删除/编辑按钮 (仅编辑模式显示) -->
@@ -626,6 +841,33 @@ function renderGrid(customItems = null) {
   }).join('');
 
   if (STATE.isEditing && !customItems) setupDrag('card-wrap', handleLinkDrop);
+}
+
+// 🔧 图标加载失败处理：级联尝试备用源
+function handleIconError(img) {
+  const fallbacksAttr = img.getAttribute('data-fallbacks');
+  
+  if (fallbacksAttr) {
+    try {
+      const fallbacks = JSON.parse(fallbacksAttr);
+      
+      if (fallbacks.length > 0) {
+        // 取出下一个备用源
+        const nextSrc = fallbacks.shift();
+        // 更新剩余备用源
+        img.setAttribute('data-fallbacks', JSON.stringify(fallbacks));
+        // 尝试加载下一个
+        img.src = nextSrc;
+        return; // 继续尝试，不显示占位符
+      }
+    } catch (e) {
+      console.warn('[handleIconError] Failed to parse fallbacks:', e);
+    }
+  }
+  
+  // 所有备用源都失败了，显示首字母占位符
+  img.style.display = 'none';
+  img.nextElementSibling.style.display = 'flex';
 }
 
 // 切换分类
@@ -833,14 +1075,14 @@ async function saveLink() {
     is_private: document.getElementById('l-private').checked ? 1 : 0
   };
   
-  if (!payload.title || !payload.url) return alert("标题和网址必填");
+  if (!payload.title || !payload.url) return showToast('⚠️ 标题和网址必填', 'error');
   
   try {
     await api(id ? '/api/link/update' : '/api/link', { id, ...payload });
     closeModals();
     await refreshData();
     showToast(id ? "链接已更新" : "链接已添加");
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
 
 function openCatModal(id, e) {
@@ -868,30 +1110,49 @@ async function saveCat() {
   const title = document.getElementById('c-title').value;
   const is_private = document.getElementById('c-private').checked ? 1 : 0;
   
-  if (!title) return alert("分类名不能为空");
+  if (!title) return showToast('⚠️ 分类名不能为空', 'error');
   
   try {
     await api(id ? '/api/category/update' : '/api/category', { id, title, is_private });
     closeModals();
     await refreshData();
     showToast(id ? "分类已更新" : "分类已添加");
-  } catch (e) { alert(e.message); }
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
 
 // === 设置与导入导出 ===
 
-function openSettings() {
+async function openSettings() {
   if (!checkAuth()) return;
-  if (!APP.isRoot) return alert("需要 Root 权限");
+  if (!APP.isRoot) return showToast('🔒 需要 Root 权限', 'error');
   document.getElementById('m-set').style.display = 'flex';
-  document.getElementById('s-title').value = APP.config.TITLE;
-  document.getElementById('s-bg').value = APP.config.BG_IMAGE;
+  document.getElementById('s-title').value = APP.config.TITLE || '';
+  document.getElementById('s-bg').value = APP.config.BG_IMAGE || '';
+  
+  // 🔒 加载私有模式配置
+  try {
+    const res = await api('/api/config');
+    document.getElementById('s-private').checked = 
+      res.private_mode === 'true' || res.private_mode === '1';
+  } catch (e) {
+    document.getElementById('s-private').checked = false;
+  }
 }
 
 async function saveConfig() {
-  await api('/api/config', { key: 'title', value: document.getElementById('s-title').value });
-  await api('/api/config', { key: 'bg_image', value: document.getElementById('s-bg').value });
-  location.reload();
+  try {
+    await api('/api/config', { key: 'title', value: document.getElementById('s-title').value });
+    await api('/api/config', { key: 'bg_image', value: document.getElementById('s-bg').value });
+    // 🔒 保存私有模式配置
+    await api('/api/config', { 
+      key: 'private_mode', 
+      value: document.getElementById('s-private').checked ? 'true' : 'false' 
+    });
+    showToast('✅ 设置已保存');
+    setTimeout(() => location.reload(), 500);
+  } catch (e) {
+    showToast('❌ 保存失败: ' + e.message, 'error');
+  }
 }
 
 async function exportData() {
@@ -913,17 +1174,22 @@ async function importData(input) {
       const json = JSON.parse(e.target.result);
       if (!Array.isArray(json)) throw new Error("JSON 格式错误: 根节点必须是数组");
       
-      if (!confirm('确认导入 ' + json.length + ' 个分类？这将合并现有数据。')) return;
-      
-      const res = await api('/api/import', json);
-      let msg = '✅ 导入成功！新增分类: ' + res.categories_added + '，新增链接: ' + res.count;
-      if (res.skipped_count > 0) {
-        msg += ' (跳过 ' + res.skipped_count + ' 个无效链接)';
-      }
-      showToast(msg, 'success');
-      setTimeout(() => location.reload(), 1500);
+      // 使用自定义确认框代替原生 confirm()
+      showConfirm('📥 确认导入', '确认导入 ' + json.length + ' 个分类？这将合并现有数据。', '确认导入', async () => {
+        try {
+          const res = await api('/api/import', json);
+          let msg = '✅ 导入成功！新增分类: ' + res.categories_added + '，新增链接: ' + res.count;
+          if (res.skipped_count > 0) {
+            msg += ' (跳过 ' + res.skipped_count + ' 个无效链接)';
+          }
+          showToast(msg, 'success');
+          setTimeout(() => location.reload(), 1500);
+        } catch (err) {
+          showToast('❌ 导入失败: ' + err.message, 'error');
+        }
+      });
     } catch (err) {
-      showToast('❌ 导入失败: ' + err.message, 'error');
+      showToast('❌ JSON 解析失败: ' + err.message, 'error');
     }
   };
   reader.readAsText(file);
@@ -1043,11 +1309,22 @@ async function handleCatDrop(src, target) {
   
   if (srcIdx === -1 || targetIdx === -1) return;
 
+  // 🔧 保存原始顺序用于错误回滚
+  const originalOrder = [...APP.data];
+  
   const [removed] = APP.data.splice(srcIdx, 1);
   APP.data.splice(targetIdx, 0, removed);
   
   renderNav();
-  await api('/api/category/reorder', APP.data.map((c, i) => ({ id: c.id, sort_order: i })));
+  
+  try {
+    await api('/api/category/reorder', APP.data.map((c, i) => ({ id: c.id, sort_order: i })));
+  } catch (err) {
+    // 🔧 错误回滚：恢复原始顺序
+    APP.data = originalOrder;
+    renderNav();
+    showToast('❌ 排序保存失败: ' + err.message + '\n页面已恢复原状态', 'error');
+  }
 }
 
 async function handleLinkDrop(src, target) {
@@ -1057,11 +1334,22 @@ async function handleLinkDrop(src, target) {
   
   if (srcIdx === -1 || targetIdx === -1) return;
 
+  // 🔧 保存原始顺序用于错误回滚
+  const originalItems = [...cat.items];
+  
   const [removed] = cat.items.splice(srcIdx, 1);
   cat.items.splice(targetIdx, 0, removed);
   
   renderGrid();
-  await api('/api/link/reorder', cat.items.map((i, idx) => ({ id: i.id, sort_order: idx })));
+  
+  try {
+    await api('/api/link/reorder', cat.items.map((i, idx) => ({ id: i.id, sort_order: idx })));
+  } catch (err) {
+    // 🔧 错误回滚：恢复原始顺序
+    cat.items = originalItems;
+    renderGrid();
+    showToast('❌ 排序保存失败: ' + err.message + '\n页面已恢复原状态', 'error');
+  }
 }
 
 function showToast(msg, type = 'info') {
