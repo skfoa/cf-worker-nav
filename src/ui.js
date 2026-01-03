@@ -1329,7 +1329,7 @@ async function handleCatDrop(src, target) {
     // 🔧 错误回滚：恢复原始顺序
     APP.data = originalOrder;
     renderNav();
-    showToast('❌ 排序保存失败: ' + err.message + '\n页面已恢复原状态', 'error');
+    showToast('❌ 排序保存失败: ' + err.message + '\\n页面已恢复原状态', 'error');
   }
 }
 
@@ -1354,7 +1354,7 @@ async function handleLinkDrop(src, target) {
     // 🔧 错误回滚：恢复原始顺序
     cat.items = originalItems;
     renderGrid();
-    showToast('❌ 排序保存失败: ' + err.message + '\n页面已恢复原状态', 'error');
+    showToast('❌ 排序保存失败: ' + err.message + '\\n页面已恢复原状态', 'error');
   }
 }
 
