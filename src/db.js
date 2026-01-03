@@ -8,6 +8,12 @@ export default class DAO {
     this.db = db;
     // 🔒 Token hashing salt - should be set via environment variable
     this.salt = env.TOKEN_SALT || 'nav_default_salt_CHANGE_IN_PRODUCTION';
+
+    // ⚠️ 安全检测：未配置 TOKEN_SALT 时输出警告
+    if (!env.TOKEN_SALT) {
+      console.warn('[DAO] ⚠️ WARNING: TOKEN_SALT is not configured! Using default salt value.');
+      console.warn('[DAO] 🔒 SECURITY RISK: Please set TOKEN_SALT environment variable in production!');
+    }
   }
 
   _now() {
@@ -334,4 +340,140 @@ export default class DAO {
       skipped_urls: skippedUrls.slice(0, 10) // 最多返回10个示例
     };
   }
+
+  // ===========================================
+  // 速率限制 (Rate Limiting for Brute-Force Protection)
+  // ===========================================
+
+  // 配置常量
+  static RATE_LIMIT = {
+    MAX_ATTEMPTS: 5,          // 最大尝试次数
+    WINDOW_MS: 60 * 1000,     // 时间窗口：1 分钟
+    LOCKOUT_MS: 15 * 60 * 1000 // 锁定时间：15 分钟
+  };
+
+  /**
+   * 检查 IP 是否被锁定
+   * @returns {Object} { blocked: boolean, remainingMs: number, attempts: number }
+   */
+  async checkRateLimit(ip) {
+    const now = this._now();
+
+    try {
+      const record = await this.db.prepare(
+        "SELECT attempts, first_attempt, locked_until FROM login_attempts WHERE ip = ?"
+      ).bind(ip).first();
+
+      if (!record) {
+        return { blocked: false, remainingMs: 0, attempts: 0 };
+      }
+
+      // 检查是否在锁定期内
+      if (record.locked_until > now) {
+        return {
+          blocked: true,
+          remainingMs: record.locked_until - now,
+          attempts: record.attempts
+        };
+      }
+
+      // 检查时间窗口是否过期（过期则重置计数）
+      const windowExpired = (now - record.first_attempt) > DAO.RATE_LIMIT.WINDOW_MS;
+      if (windowExpired) {
+        // 清理过期记录
+        await this.db.prepare("DELETE FROM login_attempts WHERE ip = ?").bind(ip).run();
+        return { blocked: false, remainingMs: 0, attempts: 0 };
+      }
+
+      return {
+        blocked: false,
+        remainingMs: 0,
+        attempts: record.attempts
+      };
+    } catch (e) {
+      // 表可能不存在（迁移未执行），降级为不限制
+      console.warn('[RateLimit] Check failed:', e.message);
+      return { blocked: false, remainingMs: 0, attempts: 0 };
+    }
+  }
+
+  /**
+   * 记录一次失败的登录尝试
+   * @returns {Object} { locked: boolean, attempts: number, lockoutMs: number }
+   */
+  async recordFailedAttempt(ip) {
+    const now = this._now();
+    const { MAX_ATTEMPTS, WINDOW_MS, LOCKOUT_MS } = DAO.RATE_LIMIT;
+
+    try {
+      const record = await this.db.prepare(
+        "SELECT attempts, first_attempt FROM login_attempts WHERE ip = ?"
+      ).bind(ip).first();
+
+      let newAttempts = 1;
+      let firstAttempt = now;
+
+      if (record) {
+        // 检查时间窗口
+        const windowExpired = (now - record.first_attempt) > WINDOW_MS;
+        if (windowExpired) {
+          // 重置计数
+          newAttempts = 1;
+          firstAttempt = now;
+        } else {
+          newAttempts = record.attempts + 1;
+          firstAttempt = record.first_attempt;
+        }
+      }
+
+      // 判断是否需要锁定
+      const shouldLock = newAttempts >= MAX_ATTEMPTS;
+      const lockedUntil = shouldLock ? (now + LOCKOUT_MS) : 0;
+
+      // Upsert 记录
+      await this.db.prepare(`
+        INSERT INTO login_attempts (ip, attempts, first_attempt, locked_until)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(ip) DO UPDATE SET 
+          attempts = excluded.attempts,
+          first_attempt = excluded.first_attempt,
+          locked_until = excluded.locked_until
+      `).bind(ip, newAttempts, firstAttempt, lockedUntil).run();
+
+      return {
+        locked: shouldLock,
+        attempts: newAttempts,
+        lockoutMs: shouldLock ? LOCKOUT_MS : 0
+      };
+    } catch (e) {
+      console.warn('[RateLimit] Record failed:', e.message);
+      return { locked: false, attempts: 0, lockoutMs: 0 };
+    }
+  }
+
+  /**
+   * 登录成功后清除该 IP 的记录
+   */
+  async clearRateLimit(ip) {
+    try {
+      await this.db.prepare("DELETE FROM login_attempts WHERE ip = ?").bind(ip).run();
+    } catch (e) {
+      console.warn('[RateLimit] Clear failed:', e.message);
+    }
+  }
+
+  /**
+   * 清理过期的锁定记录（可选：定期调用）
+   */
+  async cleanupExpiredLocks() {
+    const now = this._now();
+    try {
+      await this.db.prepare(
+        "DELETE FROM login_attempts WHERE locked_until > 0 AND locked_until < ?"
+      ).bind(now).run();
+    } catch (e) {
+      console.warn('[RateLimit] Cleanup failed:', e.message);
+    }
+  }
 }
+
