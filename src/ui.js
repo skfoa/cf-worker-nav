@@ -1035,7 +1035,7 @@ function openLinkModal(id) {
   
   const sel = document.getElementById('l-cat');
   // 填充分类下拉框
-  sel.innerHTML = APP.data.map(c => \`<option value="\${c.id}">\${esc(c.title)}\</option>\`).join('');
+  sel.innerHTML = APP.data.map(c => \`<option value="\${c.id}">\${esc(c.title)}</option>\`).join('');
   
   if (id) {
     // 编辑现有链接
