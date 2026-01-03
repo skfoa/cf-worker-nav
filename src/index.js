@@ -1,5 +1,5 @@
 import DAO from './db.js';
-import { renderUI } from './ui.js';
+import { renderUI, renderLoginPage } from './ui.js';
 
 // ==============================================
 // 1. 安全工具与全局配置
@@ -39,6 +39,32 @@ function getCorsHeaders(env) {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
+  };
+}
+
+// 🔒 安全响应头 (CSP + 其他安全策略)
+function getSecurityHeaders() {
+  // Content Security Policy 配置
+  // 注意：'unsafe-inline' 是因为 ui.js 大量使用内联事件 (onclick 等)
+  // 未来可考虑重构为 addEventListener 以移除 unsafe-inline
+  const cspDirectives = [
+    "default-src 'self'",                              // 默认只允许同源
+    "script-src 'self' 'unsafe-inline'",               // JS: 同源 + 内联 (内联事件需要)
+    "style-src 'self' 'unsafe-inline'",                // CSS: 同源 + 内联样式
+    "img-src 'self' data: https: blob:",               // 图片: 同源 + data URI + 所有 HTTPS + Blob
+    "font-src 'self' https://fonts.gstatic.com",       // 字体: 同源 + Google Fonts
+    "connect-src 'self'",                              // XHR/Fetch: 仅同源
+    "frame-ancestors 'none'",                          // 禁止被嵌入 iframe (防点击劫持)
+    "base-uri 'self'",                                 // <base> 标签限制
+    "form-action 'self'"                               // 表单提交限制
+  ];
+
+  return {
+    'Content-Security-Policy': cspDirectives.join('; '),
+    'X-Content-Type-Options': 'nosniff',               // 禁止 MIME 类型嗅探
+    'X-Frame-Options': 'DENY',                         // 禁止 iframe 嵌入
+    'X-XSS-Protection': '1; mode=block',               // 旧版浏览器 XSS 过滤
+    'Referrer-Policy': 'strict-origin-when-cross-origin'  // 控制 Referer 信息泄露
   };
 }
 
@@ -89,6 +115,24 @@ export default {
         : authHeader.trim();
     }
 
+    // 🔒 获取客户端 IP（用于速率限制）
+    const clientIP = request.headers.get('CF-Connecting-IP') ||
+      request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
+      'unknown';
+
+    // 🔒 速率限制检查（在验证密码前）
+    if (token) {
+      const rateCheck = await dao.checkRateLimit(clientIP);
+      if (rateCheck.blocked) {
+        const remainingMin = Math.ceil(rateCheck.remainingMs / 60000);
+        return json({
+          error: `Too many failed attempts. Try again in ${remainingMin} minutes.`,
+          blocked: true,
+          remainingMs: rateCheck.remainingMs
+        }, 429, env);
+      }
+    }
+
     // Level 1: Root 身份 (最高权限)
     let isRoot = false;
     if (env.PASSWORD && token) {
@@ -102,11 +146,17 @@ export default {
       isUser = await dao.validateToken(token);
     }
 
+    // 🔒 登录成功：清除速率限制记录
+    if (isUser && token) {
+      await dao.clearRateLimit(clientIP);
+    }
+
+
     // ==========================================
     // 4. 公开路由 (Public Routes)
     // ==========================================
 
-    // [GET] PWA Manifest
+    // [GET] PWA Manifest (缓存 1 天)
     if (path === '/manifest.json') {
       let title = env.TITLE || "Nav";
       try {
@@ -122,7 +172,13 @@ export default {
         background_color: "#1a1a1a",
         theme_color: "#1a1a1a",
         icons: [{ src: "https://cdn-icons-png.flaticon.com/512/1006/1006771.png", sizes: "192x192", type: "image/png" }]
-      }), { headers: { "content-type": "application/json", ...getCorsHeaders(env) } });
+      }), {
+        headers: {
+          "content-type": "application/json",
+          "Cache-Control": "public, max-age=86400",  // ⚙️ 缓存 1 天
+          ...getCorsHeaders(env)
+        }
+      });
     }
 
     // [GET] 健康检查
@@ -130,27 +186,58 @@ export default {
       return json({ status: 'ok', ...(await dao.getStats()) });
     }
 
-    // [GET] 获取公共配置
+    // [GET] 获取公共配置 (缓存 5 分钟)
     if (path === '/api/config' && method === 'GET') {
       const conf = await dao.getConfigs();
-      return json({
+      return new Response(JSON.stringify({
         title: conf.title || env.TITLE || "My Nav",
         bg_image: conf.bg_image || env.BG_IMAGE || "",
         allow_search: conf.allow_search !== 'false'
+      }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=300, s-maxage=300",  // ⚙️ 缓存 5 分钟
+          ...getCorsHeaders(env)
+        }
       });
     }
 
     // [SSR] 首页渲染
     if (path === '/' || path === '/index.html') {
       try {
-        const data = await dao.getAllData(false); // false = 仅公开数据
+        // 获取配置（包括 private_mode）
+        const config = await dao.getConfigs();
         const uiConfig = {
-          TITLE: data.config.title || env.TITLE || "My Nav",
-          BG_IMAGE: data.config.bg_image || env.BG_IMAGE || "",
+          TITLE: config.title || env.TITLE || "My Nav",
+          BG_IMAGE: config.bg_image || env.BG_IMAGE || "",
         };
-        // 渲染 UI (ui.js 提供)
-        return new Response(renderUI(data.nav, uiConfig), {
-          headers: { "content-type": "text/html;charset=UTF-8" }
+
+        // 🔒 私有模式检查
+        const isPrivateMode = config.private_mode === 'true' || config.private_mode === '1';
+        const hasAuthParam = url.searchParams.get('auth') === '1';
+
+        if (isPrivateMode && !hasAuthParam) {
+          // 返回纯登录页面（不暴露任何链接数据）
+          return new Response(renderLoginPage(uiConfig), {
+            headers: {
+              "content-type": "text/html;charset=UTF-8",
+              "Cache-Control": "no-store",  // 私有模式不缓存
+              ...getSecurityHeaders()
+            }
+          });
+        }
+
+        // 🔒 安全修复：私有模式下，即使有 ?auth=1，SSR 也不注入数据
+        // 数据完全依赖客户端通过 API (/api/data) 拉取，防止源码泄露
+        const ssrData = isPrivateMode ? [] : (await dao.getAllData(false)).nav;
+
+        // 渲染 UI + 🔒 添加安全响应头
+        return new Response(renderUI(ssrData, uiConfig), {
+          headers: {
+            "content-type": "text/html;charset=UTF-8",
+            "Cache-Control": isPrivateMode ? "no-store" : "public, max-age=60, s-maxage=60",
+            ...getSecurityHeaders()
+          }
         });
       } catch (e) {
         // 🔒 XSS 修复：转义错误信息防止反射型攻击
@@ -159,7 +246,7 @@ export default {
            <h1>🚧 System Error</h1>
            <p>${escapeHtml(e.message)}</p>
            </body></html>`,
-          { status: 500, headers: { "content-type": "text/html" } }
+          { status: 500, headers: { "content-type": "text/html", ...getSecurityHeaders() } }
         );
       }
     }
@@ -185,8 +272,26 @@ export default {
         }
       }
 
-      // 🔒 鉴权拦截
+      // 🔒 鉴权拦截 + 速率限制记录
       if (!isUser) {
+        // 只有当提供了 token 但验证失败时才记录（防止无 token 请求也计数）
+        if (token) {
+          const result = await dao.recordFailedAttempt(clientIP);
+          if (result.locked) {
+            const lockMin = Math.ceil(result.lockoutMs / 60000);
+            return json({
+              error: `Account locked due to too many failed attempts. Try again in ${lockMin} minutes.`,
+              blocked: true,
+              lockoutMs: result.lockoutMs
+            }, 429, env);
+          }
+          // 返回剩余尝试次数提示
+          const remaining = 5 - result.attempts;
+          return json({
+            error: `Unauthorized. ${remaining} attempts remaining before lockout.`,
+            attemptsRemaining: remaining
+          }, 401, env);
+        }
         return json({ error: "Unauthorized" }, 401, env);
       }
 
@@ -278,6 +383,28 @@ export default {
         return errorResp(e.message, 500);
       }
     }
+
+    // 🔒 404 伪装：私有模式下返回登录页，迷惑爬虫/扫描器
+    // 无论访问 /admin, /wp-login.php 还是任何路径，都只看到登录框
+    try {
+      const config = await dao.getConfigs();
+      const isPrivateMode = config.private_mode === 'true' || config.private_mode === '1';
+
+      if (isPrivateMode) {
+        const uiConfig = {
+          TITLE: config.title || env.TITLE || "My Nav",
+          BG_IMAGE: config.bg_image || env.BG_IMAGE || "",
+        };
+        return new Response(renderLoginPage(uiConfig), {
+          status: 200,  // 返回 200 而非 404，完全伪装
+          headers: {
+            "content-type": "text/html;charset=UTF-8",
+            "Cache-Control": "no-store",
+            ...getSecurityHeaders()
+          }
+        });
+      }
+    } catch (e) { /* 配置读取失败，降级为普通 404 */ }
 
     return new Response("Not Found", { status: 404 });
   }
