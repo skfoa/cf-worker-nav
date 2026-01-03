@@ -47,9 +47,12 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-                    # 【新增】告诉 Wrangler 上传这个机密变量
+          # 【重要】告诉 Wrangler 上传这些机密变量
           secrets: |
             PASSWORD
+            TOKEN_SALT
         env:
-          # 【新增】将 GitHub 仓库里的 PASSWORD 值传递给 Wrangler
+          # 将 GitHub 仓库里的 Secrets 值传递给 Wrangler
           PASSWORD: ${{ secrets.PASSWORD }}
+          # 【安全修复】传递 TOKEN_SALT，避免生产环境使用硬编码默认盐值
+          TOKEN_SALT: ${{ secrets.TOKEN_SALT }}
