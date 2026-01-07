@@ -2,188 +2,211 @@
 
 一个极简、美观、安全的个人导航页，基于 Cloudflare Workers + D1 数据库构建。
 
-<!-- TODO: 在此处添加项目截图 -->
-<!-- ![首页截图](./screenshots/home.png) -->
+<!-- TODO: 添加项目截图 -->
+<!-- ![Demo](./screenshots/demo.png) -->
 
-## ✨ 特性
+## ✨ 功能特性
 
-- ⚡ **Serverless** - 完全运行在 Cloudflare Workers，全球边缘节点加速
-- 💾 **D1 数据库** - 基于 SQLite，支持分类管理、链接排序
-- 🔒 **安全加固** - XSS 防护、CSP 策略、速率限制、时序安全密码验证
-- � **常用推荐** - 自动统计点击量，智能推荐热门链接
+- ⚡ **零成本部署** - Cloudflare Workers 免费额度足够个人使用
+- 💾 **D1 数据库** - 无需额外配置数据库服务器
+- 🔒 **安全加固** - XSS 防护、速率限制、时序安全密码验证
+- 🔥 **热门推荐** - 自动统计点击量，智能推荐常用链接
 - 🎨 **精美 UI** - 毛玻璃效果、暗色主题、响应式设计
-- 🔐 **私有模式** - 可选启用登录保护，隐藏所有链接
-- 📱 **PWA 支持** - 可添加到手机主屏幕
-- 🚀 **一键部署** - GitHub Actions 自动化 CI/CD
+-  **PWA 支持** - 可添加到手机主屏幕
 
-## 📸 预览
+---
 
-<!-- TODO: 添加更多截图 -->
-<!-- 
-![管理后台](./screenshots/admin.png)
-![移动端](./screenshots/mobile.png) 
--->
+## 🚀 部署教程（Fork 一键部署）
 
-## 🚀 快速开始
+> 整个过程约 **10 分钟**，无需本地安装任何开发环境
 
-### 前置要求
+### 📋 你需要准备
 
-- [Cloudflare 账号](https://dash.cloudflare.com/)
-- [Node.js](https://nodejs.org/) 18+
-- Git
+- 一个 [GitHub](https://github.com) 账号
+- 一个 [Cloudflare](https://dash.cloudflare.com) 账号（免费注册）
 
-### 1️⃣ 克隆项目
+---
 
-```bash
-git clone https://github.com/YOUR_USERNAME/cf-worker-nav.git
-cd cf-worker-nav
-npm install
+### 第一步：Fork 本仓库
+
+点击右上角 **Fork** 按钮，将项目复制到你的 GitHub 账号下。
+
+<!-- TODO: Fork 按钮截图 -->
+
+---
+
+### 第二步：创建 Cloudflare API Token
+
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. 点击右上角头像 → **My Profile**
+3. 左侧菜单选择 **API Tokens**
+4. 点击 **Create Token**
+5. 选择 **Edit Cloudflare Workers** 模板
+6. 点击 **Continue to summary** → **Create Token**
+7. ⚠️ **复制并保存 Token**（只显示一次！）
+
+<!-- TODO: API Token 创建截图 -->
+
+---
+
+### 第三步：获取 Account ID
+
+1. 进入 [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. 点击左侧菜单 **Workers & Pages**
+3. 右侧会显示 **Account ID**，点击复制
+
+<!-- TODO: Account ID 位置截图 -->
+
+---
+
+### 第四步：创建 D1 数据库
+
+1. 在 Cloudflare Dashboard 左侧菜单，展开 **Workers & Pages**
+2. 点击 **D1 SQL Database**
+3. 点击 **Create database**
+4. 数据库名称填写：`nav-db`
+5. 点击 **Create**
+6. 创建完成后，复制页面上显示的 **Database ID**
+
+<!-- TODO: D1 创建截图 -->
+
+---
+
+### 第五步：配置 GitHub Secrets
+
+回到你 Fork 的 GitHub 仓库：
+
+1. 点击 **Settings** → 左侧 **Secrets and variables** → **Actions**
+2. 点击 **New repository secret**，依次添加以下 4 个 Secret：
+
+| Name | Value | 说明 |
+|------|-------|------|
+| `CLOUDFLARE_API_TOKEN` | 第二步获取的 Token | Cloudflare API 令牌 |
+| `CLOUDFLARE_ACCOUNT_ID` | 第三步获取的 ID | Cloudflare 账户 ID |
+| `CLOUDFLARE_D1_ID` | 第四步获取的 Database ID | D1 数据库 ID |
+| `PASSWORD` | 自己设置一个密码 | 管理员登录密码 |
+
+可选 Secret（推荐添加）：
+
+| Name | Value | 说明 |
+|------|-------|------|
+| `TOKEN_SALT` | 随机字符串（如 `abc123xyz`） | Token 加密盐值，增强安全性 |
+
+<!-- TODO: GitHub Secrets 配置截图 -->
+
+---
+
+### 第六步：触发部署
+
+1. 进入你 Fork 的仓库，点击 **Actions** 标签页
+2. 如果提示需要启用 Actions，点击 **I understand my workflows, go ahead and enable them**
+3. 点击左侧 **Deploy Worker & D1**
+4. 点击 **Run workflow** → **Run workflow**
+
+等待约 1-2 分钟，部署完成后会显示绿色 ✓
+
+<!-- TODO: Actions 运行截图 -->
+
+---
+
+### 第七步：访问你的导航页
+
+部署成功后，访问：
+
+```
+https://cf-worker-nav.<你的子域名>.workers.dev
 ```
 
-### 2️⃣ 创建 D1 数据库
+> 💡 你的子域名可以在 Cloudflare Dashboard → Workers & Pages → Overview 页面查看
 
-```bash
-# 登录 Cloudflare
-npx wrangler login
+---
 
-# 创建数据库
-npx wrangler d1 create nav-db
-```
+## 🔧 自定义域名（可选）
 
-复制输出的 `database_id`，填入 `wrangler.toml`：
+1. 在 Cloudflare Dashboard 进入 **Workers & Pages**
+2. 点击你的 Worker（`cf-worker-nav`）
+3. 点击 **Settings** → **Triggers** → **Custom Domains**
+4. 添加你的域名（需要先将域名 DNS 托管到 Cloudflare）
 
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "nav-db"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # ← 替换这里
-```
+---
 
-### 3️⃣ 初始化数据库
+## 📖 使用说明
 
-```bash
-# 本地开发环境
-npx wrangler d1 execute nav-db --local --file=./migrations/0001_init.sql
+### 登录管理后台
 
-# 远程生产环境
-npx wrangler d1 execute nav-db --remote --file=./migrations/0001_init.sql
-```
+1. 访问你的导航页
+2. 按键盘快捷键：**Ctrl + /** 或 **Cmd + /**
+3. 输入你设置的 `PASSWORD` 密码
+4. 登录成功后即可添加/编辑分类和链接
 
-### 4️⃣ 配置环境变量
+### 功能说明
 
-复制 `.env.example` 为 `.env`，然后设置密码：
+- **添加分类**：点击底部 "+" 按钮
+- **添加链接**：进入分类后点击 "+" 按钮
+- **拖拽排序**：长按链接卡片可拖动排序
+- **私有模式**：在设置中开启，访问需要先登录
 
-```bash
-# Cloudflare Secrets (推荐)
-npx wrangler secret put PASSWORD
-# 输入你的管理密码
-```
+---
 
-或在 `wrangler.toml` 中临时配置（仅开发用）：
+## ❓ 常见问题
 
-```toml
-[vars]
-PASSWORD = "your-super-secret-password"
-TITLE = "My Navigation"
-```
+### Q: 部署失败显示 "D1_ID_PLACEHOLDER"
 
-### 5️⃣ 本地开发
+**A:** 你没有正确配置 `CLOUDFLARE_D1_ID` Secret。请检查：
+- Secret 名称必须是 `CLOUDFLARE_D1_ID`（全大写）
+- 值是 D1 数据库的 ID（不是数据库名称）
 
-```bash
-npm run dev
-```
+### Q: 访问显示 "Database D1 is not bound"
 
-访问 http://localhost:8787
+**A:** D1 数据库绑定失败。请确认：
+1. 数据库名称是 `nav-db`
+2. `CLOUDFLARE_D1_ID` 配置正确
+3. 重新运行一次 GitHub Actions
 
-### 6️⃣ 部署到 Cloudflare
+### Q: 登录提示 "Unauthorized"
 
-```bash
-npm run deploy
-```
+**A:** 密码错误。请检查：
+- 确认在 GitHub Secrets 中配置了 `PASSWORD`
+- 密码区分大小写
+- 重新部署后密码才会生效
 
-## ⚙️ 配置项
+### Q: 如何重置数据库？
 
-### 环境变量
+**A:** 在 Cloudflare Dashboard 删除 D1 数据库，重新创建同名数据库，然后运行 GitHub Actions。
 
-| 变量名 | 必填 | 说明 |
-|--------|------|------|
-| `PASSWORD` | ✅ | 管理员密码（建议用 `wrangler secret` 设置） |
-| `TITLE` | ❌ | 网站标题，默认 `My Nav` |
-| `BG_IMAGE` | ❌ | 背景图片 URL |
-| `ALLOWED_ORIGIN` | ❌ | CORS 允许的来源，默认 `*` |
-
-### 数据库配置
-
-通过管理后台或 API 可设置：
-
-| 配置项 | 说明 |
-|--------|------|
-| `title` | 网站标题（覆盖环境变量） |
-| `bg_image` | 背景图片 URL |
-| `private_mode` | 私有模式 (`true`/`false`) |
-| `allow_search` | 显示搜索框 (`true`/`false`) |
-
-## 🔌 API 接口
-
-### 公开接口
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/` | GET | 首页 |
-| `/api/health` | GET | 健康检查 |
-| `/api/config` | GET | 获取公共配置 |
-| `/api/icon?domain=xxx` | GET | 获取网站图标（带缓存） |
-| `/api/visit` | POST | 上报链接点击 |
-
-### 需要鉴权（Header: `Authorization: Bearer <PASSWORD>`）
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/data` | GET | 获取全部数据 |
-| `/api/category` | POST | 添加分类 |
-| `/api/category/update` | POST | 更新分类 |
-| `/api/category/delete` | POST | 删除分类 |
-| `/api/link` | POST | 添加链接 |
-| `/api/link/update` | POST | 更新链接 |
-| `/api/link/delete` | POST | 删除链接 |
-| `/api/import` | POST | 导入数据（Root） |
-| `/api/export` | GET | 导出数据（Root） |
-| `/api/config` | POST | 更新配置（Root） |
-
-## 🔐 安全特性
-
-- **XSS 防护** - 所有用户输入均经过 HTML 转义
-- **CSP 策略** - 严格的内容安全策略
-- **时序安全** - 密码验证使用 `crypto.subtle.timingSafeEqual`
-- **速率限制** - 5 次失败后锁定 15 分钟
-- **HTTPS Only** - URL 仅允许 `http://` 和 `https://` 协议
+---
 
 ## 📁 项目结构
 
 ```
 cf-worker-nav/
 ├── src/
-│   ├── index.js      # Worker 入口 & 路由
-│   ├── db.js         # D1 数据库 DAO 层
-│   └── ui.js         # SSR 前端渲染
+│   ├── index.js       # Worker 主入口
+│   ├── db.js          # 数据库操作层
+│   └── ui.js          # 前端页面渲染
 ├── migrations/
-│   └── 0001_init.sql # 数据库初始化脚本
-├── .github/
-│   └── workflows/
-│       └── deploy.yml # GitHub Actions 自动部署
-├── wrangler.toml     # Cloudflare 配置
-├── package.json
-└── README.md
+│   └── 0001_init.sql  # 数据库初始化
+├── .github/workflows/
+│   └── deploy.yml     # 自动部署配置
+├── wrangler.toml      # Cloudflare 配置
+└── .env.example       # 环境变量示例
 ```
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 📄 License
-
-MIT License
 
 ---
 
-Made with ❤️ and Cloudflare Workers
+## 🔒 安全说明
+
+- 密码使用时序安全比对，防止计时攻击
+- 5 次密码错误后锁定 15 分钟
+- 所有用户输入经过 XSS 过滤
+- 链接仅允许 http/https 协议
+
+---
+
+## 📄 License
+
+MIT
+
+---
+
+Made with ❤️ by Cloudflare Workers
