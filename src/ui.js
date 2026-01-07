@@ -1,6 +1,5 @@
 /**
- * src/ui.js
- * Final Version: 修复空白页登录引导 + 增强删除功能可见性
+ * src/ui.js - 前端 UI 渲染
  */
 
 // 🔒 私有模式：纯登录页面（不暴露任何内容给爬虫）
@@ -68,7 +67,7 @@ async function login() {
     const json = await res.json();
     if (json.status === 'ok') {
       localStorage.setItem('nav_token', pwd);
-      // 🔧 UX 优化：直接跳转避免闪烁
+      // 直接跳转避免闪烁
       location.href = '/?auth=1';
     } else {
       showError('密码错误');
@@ -168,7 +167,7 @@ export function renderUI(ssrData, ssrConfig) {
     /* 📱 移除全局 user-select: none，允许长按菜单 */
   }
 
-  /* 📱 性能优化：将 fixed 背景图移到伪元素，避免 iOS Safari 滚动卡顿 */
+  /* 📱 背景图移到伪元素，避免 iOS Safari 滚动卡顿 */
   body::after {
     content: ''; position: fixed; inset: 0; z-index: -2;
     background: url('${esc(ssrConfig.BG_IMAGE)}') center/cover no-repeat;
@@ -336,7 +335,7 @@ export function renderUI(ssrData, ssrConfig) {
     backdrop-filter: blur(10px);
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     position: relative; overflow: hidden;
-    /* 📱 移动端优化：默认允许系统长按菜单(新标签页打开等) */
+    /* 📱 移动端：默认允许系统长按菜单(新标签页打开等) */
     -webkit-touch-callout: default;
     user-select: none; /* 保留禁止文本选中 */
   }
@@ -355,7 +354,7 @@ export function renderUI(ssrData, ssrConfig) {
     filter: drop-shadow(0 4px 6px rgba(0,0,0,0.2));
   }
   
-  /* 默认图标占位符 - 优化：避免每个卡片重复内联 SVG */
+  /* 默认图标占位符 - 避免每个卡片重复内联 SVG */
   .card .icon-fallback {
     width: 48px; height: 48px; margin-bottom: 12px;
     border-radius: 10px;
@@ -640,7 +639,7 @@ export function renderUI(ssrData, ssrConfig) {
   </div>
 </div></div>
 
-<!-- 🌟 工业级数据注入 (JSON Island) -->
+<!-- 服务端数据注入 (JSON Island) -->
 <script type="application/json" id="app-state">${safeState}</script>
 <script>
 /** 
@@ -728,7 +727,7 @@ function initTheme() {
       if (res.status === 'ok') {
         APP.isRoot = (res.role === 'root');
         document.getElementById('btn-logout').style.display = 'flex';
-        // 🔧 修复：登录成功后重新获取完整数据（包括私有分类）
+        // 登录成功后重新获取完整数据（包括私有分类）
         await refreshData();
       } else {
         doLogout(); // Token 失效
@@ -773,7 +772,7 @@ function renderGrid(customItems = null) {
     if (cat) items = cat.items;
   }
 
-  // === 关键修复：空状态处理 ===
+  // === 空状态处理 ===
   // 如果当前分类没数据，或者根本没有分类（比如全部私有且未登录）
   if (!items || items.length === 0) {
     let html = '<div class="empty-state">';
