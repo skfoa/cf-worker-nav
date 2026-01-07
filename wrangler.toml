@@ -1,7 +1,6 @@
 name = "cf-worker-nav"
 main = "src/index.js"
-# 保持最新即可，或者锁定在你当前的开发日期
-compatibility_date = "2025-01-01"
+compatibility_date = "2024-12-01"
 
 # 绑定 D1 数据库
 [[d1_databases]]
@@ -21,4 +20,4 @@ enabled = true
 # TITLE = "我的默认导航"
 # ⚠️ TOKEN_SALT: 仅用于本地开发的占位符
 # 生产环境请在 Cloudflare Dashboard -> Settings -> Variables 中配置真实值
-# TOKEN_SALT = "local_dev_salt_DO_NOT_USE_IN_PROD"
+TOKEN_SALT = "local_dev_salt_DO_NOT_USE_IN_PROD"
