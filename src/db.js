@@ -1,7 +1,5 @@
 /**
- * src/db.js
- * v6.0 Fixed: 修复 Link 隐私字段写入遗漏 & 增强 SQL 过滤逻辑
- * Force Build Update
+ * src/db.js - 数据库访问层 (DAO)
  */
 export default class DAO {
   constructor(db, env = {}) {
@@ -44,7 +42,7 @@ export default class DAO {
       ? "SELECT * FROM categories ORDER BY sort_order ASC, id ASC"
       : "SELECT * FROM categories WHERE COALESCE(is_private, 0) = 0 ORDER BY sort_order ASC, id ASC";
 
-    // 🔒 深度防御 & 修复核心 Bug：
+    // 🔒 深度防御：
     // 未登录时，使用 INNER JOIN 确保：
     // 1. 分类是公开的 (c.is_private = 0)
     // 2. 链接本身也是公开的 (l.is_private = 0)
@@ -204,7 +202,7 @@ export default class DAO {
     if (url !== undefined) { sql += ", url = ?"; args.push(url); }
     if (description !== undefined) { sql += ", description = ?"; args.push(description); }
     if (icon !== undefined) { sql += ", icon = ?"; args.push(icon); }
-    // 🛠️ 修复：更新时包含 is_private 字段
+    // 更新时包含 is_private 字段
     if (is_private !== undefined) { sql += ", is_private = ?"; args.push(Number(is_private)); }
 
     sql += " WHERE id = ?";
@@ -307,7 +305,7 @@ export default class DAO {
 
       if (catId && Array.isArray(group.items)) {
         for (const item of group.items) {
-          // 🔒 URL 协议校验：跳过非 http/https URL 以符合 Migration 0003 约束
+          // 🔒 URL 协议校验：跳过非 http/https URL 以符合数据库约束
           const url = item.url || '';
           if (!/^https?:\/\//i.test(url)) {
             console.warn(`[importData] Skipping invalid URL: ${url}`);
@@ -315,7 +313,7 @@ export default class DAO {
             skippedUrls.push(url || '(empty)');
             continue;
           }
-          // 🛠️ 修复：导入时显式设置 is_private = 0 (公开)
+          // 导入时显式设置 is_private = 0 (公开)
           linkStmts.push(this.db.prepare(
             `INSERT INTO links (category_id, title, url, description, icon, is_private, created_at, updated_at) 
               VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
