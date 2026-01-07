@@ -101,7 +101,20 @@ BEGIN
 END;
 
 -- ==========================================
--- 7. Seed Data (初始数据)
+-- 7. Login Attempts (速率限制表 - 防暴力破解)
+-- ==========================================
+DROP TABLE IF EXISTS login_attempts;
+CREATE TABLE login_attempts (
+    ip TEXT PRIMARY KEY,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    first_attempt INTEGER NOT NULL,  -- 首次尝试时间戳
+    locked_until INTEGER DEFAULT 0   -- 锁定截止时间（0=未锁定）
+);
+
+CREATE INDEX IF NOT EXISTS idx_attempts_locked ON login_attempts(locked_until);
+
+-- ==========================================
+-- 8. Seed Data (初始数据)
 -- ==========================================
 -- 注意："常用推荐" 现在是动态生成的虚拟分类，不再创建静态分类
 INSERT INTO categories (title, sort_order) VALUES ('工具站', 0);
