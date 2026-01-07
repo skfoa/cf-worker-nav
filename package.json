@@ -16,7 +16,7 @@
     "d1",
     "navigation"
   ],
-  "author": "Your Name",
+  "author": "",
   "license": "MIT",
   "devDependencies": {
     "wrangler": "^3.22.0"
