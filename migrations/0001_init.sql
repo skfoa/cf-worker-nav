@@ -1,7 +1,7 @@
--- Migration number: 0001   2025-12-29
--- Complete Schema with Security Audit Fixes
--- ⚠️ WARNING: Contains DROP TABLE statements for development reset only!
--- ⚠️ Do NOT run on production databases with existing data!
+-- Migration: 0001_init.sql
+-- 完整数据库初始化脚本（包含所有表、索引、触发器）
+-- ⚠️ 警告：包含 DROP TABLE 语句，仅用于全新安装！
+-- ⚠️ 请勿在已有数据的生产数据库上运行！
 
 -- ==========================================
 -- 1. Categories (分类表)
