@@ -365,6 +365,8 @@ export function renderUI(ssrData, ssrConfig) {
     font-size: 24px; font-weight: 600; color: white;
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   }
+  /* 🎨 Emoji 图标或内网 IP 时直接显示 */
+  .card .icon-fallback.show { display: flex; }
 
   .card span {
     font-size: 13px; font-weight: 500;
@@ -801,46 +803,50 @@ function renderGrid(customItems = null) {
   // 正常渲染卡片
   grid.innerHTML = items.map(item => {
     let domain = '';
+    let isInternalIP = false;
     try {
-      domain = new URL(item.url).hostname;
+      const urlObj = new URL(item.url);
+      domain = urlObj.hostname;
+      // 🔒 检测内网 IP (不发送外部请求)
+      isInternalIP = /^(localhost|127\\.|192\\.168\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)/.test(domain);
     } catch (e) {
-      domain = 'example.com'; // URL 格式错误时使用默认值
+      domain = 'example.com';
     }
     
-    // 🔧 多级回退图标源策略 (国内优先，减少等待时间)
-    // 1. 用户自定义 icon (最高优先级)
-    // 2. Ico.moe (国内 CDN 加速，速度最快)
-    // 3. DuckDuckGo (国内可访问，较稳定)
-    // 4. Favicon.im (国外服务，图标质量高)
-    // 5. Google Favicon (质量高，但需代理)
-    // 6. 首字母占位符 (最终兜底)
-    const fallbackSources = [
-      \`https://ico.moe/domain/\${domain}\`,
-      \`https://icons.duckduckgo.com/ip3/\${domain}.ico\`,
-      \`https://favicon.im/\${domain}?larger=true\`,
-      \`https://www.google.com/s2/favicons?sz=64&domain=\${domain}\`
-    ];
+    // 🎨 检测 Emoji 图标 (不是 URL 的就当作 Emoji/文字显示)
+    const isEmojiIcon = item.icon && !item.icon.startsWith('http');
     
-    // 如果用户有自定义 icon，则它是第一优先级
-    const primaryIcon = item.icon || fallbackSources.shift();
+    // 🔧 首字母/Emoji 显示
+    const initial = isEmojiIcon ? item.icon : (item.title || 'N').charAt(0).toUpperCase();
     
-    // 🔧 优化：首字母仅在所有源都失败时显示
-    const initial = (item.title || 'N').charAt(0).toUpperCase();
+    // 🔒 隐私优化：使用后端代理获取图标
+    let primaryIcon = '';
+    let fallbackSources = [];
     
-    // 将剩余备用源编码到 data 属性，供 onerror 级联使用
+    if (isEmojiIcon || isInternalIP) {
+      // Emoji 图标或内网 IP：不加载外部图片
+      primaryIcon = '';
+    } else if (item.icon) {
+      // 用户自定义图标 URL
+      primaryIcon = item.icon;
+      fallbackSources = ['/api/icon?domain=' + encodeURIComponent(domain)];
+    } else {
+      // 默认：通过代理获取图标
+      primaryIcon = '/api/icon?domain=' + encodeURIComponent(domain);
+      fallbackSources = ['https://ico.moe/domain/' + domain];
+    }
+    
     const fallbacksJson = JSON.stringify(fallbackSources).replace(/"/g, '&quot;');
+    const showFallbackFirst = isEmojiIcon || isInternalIP || !primaryIcon;
 
     return \`
     <div class="card-wrap" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}">
       <a class="card" href="\${esc(item.url)}" target="_blank" 
          onclick="trackClick(\${item.id}); \${STATE.isEditing ? 'return false' : ''}">
-        <img src="\${esc(primaryIcon)}" loading="lazy" 
-             data-fallbacks="\${fallbacksJson}"
-             onerror="handleIconError(this)">
-        <div class="icon-fallback">\${initial}</div>
+        \${primaryIcon ? \`<img src="\${esc(primaryIcon)}" loading="lazy" data-fallbacks="\${fallbacksJson}" onerror="handleIconError(this)">\` : ''}
+        <div class="icon-fallback\${showFallbackFirst ? ' show' : ''}">\${initial}</div>
         <span>\${esc(item.title)}</span>
       </a>
-      <!-- 链接删除/编辑按钮 (仅编辑模式显示) -->
       <div class="btn-edit-link" onclick="openLinkModal(\${item.id})">✎</div>
       <div class="btn-del-link" onclick="deleteLink(\${item.id})">✕</div>
     </div>\`;
