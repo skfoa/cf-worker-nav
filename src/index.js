@@ -87,7 +87,7 @@ export default {
     }
 
     const url = new URL(request.url);
-    // 🛠️ 修复：移除路径末尾的斜杠，防止 '/api/data/' 匹配失败
+    // 移除路径末尾斜杠，统一路由匹配
     const path = url.pathname.endsWith('/') && url.pathname.length > 1
       ? url.pathname.slice(0, -1)
       : url.pathname;
@@ -103,12 +103,12 @@ export default {
     }
 
     // ==========================================
-    // 3. 鉴权逻辑 (修复 Bearer 格式问题)
+    // 3. 鉴权逻辑
     // ==========================================
     const authHeader = request.headers.get("Authorization");
     let token = "";
 
-    // 🛠️ 修复：自动提取 'Bearer ' 后的 Token
+    // 提取 Token（支持 Bearer 格式）
     if (authHeader) {
       token = authHeader.startsWith("Bearer ")
         ? authHeader.slice(7).trim()
@@ -227,7 +227,7 @@ export default {
           });
         }
 
-        // 🔒 安全修复：私有模式下，即使有 ?auth=1，SSR 也不注入数据
+        // 🔒 私有模式安全保障：私有模式下，即使有 ?auth=1，SSR 也不注入数据
         // 数据完全依赖客户端通过 API (/api/data) 拉取，防止源码泄露
         const ssrData = isPrivateMode ? [] : (await dao.getAllData(false)).nav;
 
@@ -240,7 +240,7 @@ export default {
           }
         });
       } catch (e) {
-        // 🔒 XSS 修复：转义错误信息防止反射型攻击
+        // 🔒 XSS 防护：转义错误信息防止反射型攻击
         return new Response(
           `<!DOCTYPE html><html><body style="background:#111;color:#fff;font-family:sans-serif;padding:2rem;">
            <h1>🚧 System Error</h1>
