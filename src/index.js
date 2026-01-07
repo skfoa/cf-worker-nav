@@ -80,7 +80,7 @@ function errorResp(msg, status = 500, env = null) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     // 0. 数据库绑定检查 (防止本地开发未配置导致崩溃)
     if (!env.DB) {
       return errorResp("Database D1 is not bound. Check wrangler.toml", 500);
@@ -271,6 +271,80 @@ export default {
           return json({ status: 'ok' }, 200, env); // 即使失败也返回成功，不影响用户体验
         }
       }
+
+      // 🔒 图标代理接口 (隐私保护：避免浏览器直接请求 Google)
+      // ⚡ 使用 Cloudflare Cache API 实现边缘缓存，避免频繁请求 Google
+      if (path === '/api/icon' && method === 'GET') {
+        const domain = url.searchParams.get('domain');
+        if (!domain) {
+          return new Response('Missing domain parameter', { status: 400 });
+        }
+
+        // 安全检查：只允许有效域名格式
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*\.[a-zA-Z]{2,}$/.test(domain)) {
+          return new Response('Invalid domain format', { status: 400 });
+        }
+
+        // 🔧 构建规范化的缓存 Key（确保同一域名总是使用相同的 key）
+        const cacheKey = new Request(`https://icon-cache.internal/icon/${domain.toLowerCase()}`, {
+          method: 'GET'
+        });
+        const cache = caches.default;
+
+        try {
+          // ⚡ Step 1: 尝试从 Cloudflare Cache 读取
+          let cachedResponse = await cache.match(cacheKey);
+          if (cachedResponse) {
+            // 命中缓存，直接返回（添加标记头方便调试）
+            const headers = new Headers(cachedResponse.headers);
+            headers.set('X-Cache', 'HIT');
+            return new Response(cachedResponse.body, {
+              status: cachedResponse.status,
+              headers
+            });
+          }
+
+          // ⚡ Step 2: 缓存未命中，请求 Google Favicon 服务
+          const iconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
+          const iconRes = await fetch(iconUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NavIconProxy/1.0)' }
+          });
+
+          if (!iconRes.ok) {
+            return new Response('Icon not found', { status: 404 });
+          }
+
+          // 读取图标内容（需要先读取才能同时写入缓存和返回）
+          const iconBody = await iconRes.arrayBuffer();
+          const contentType = iconRes.headers.get('Content-Type') || 'image/png';
+
+          // 构建响应（7天缓存）
+          const responseHeaders = {
+            'Content-Type': contentType,
+            'Cache-Control': 'public, max-age=604800, s-maxage=604800', // 浏览器+CDN 缓存 7 天
+            'Access-Control-Allow-Origin': '*',
+            'X-Cache': 'MISS'
+          };
+
+          const response = new Response(iconBody, { headers: responseHeaders });
+
+          // ⚡ Step 3: 写入 Cloudflare Cache（使用 waitUntil 避免阻塞响应）
+          // 必须克隆响应，因为 Response body 只能读取一次
+          const responseToCache = new Response(iconBody, {
+            headers: {
+              'Content-Type': contentType,
+              'Cache-Control': 'public, max-age=604800, s-maxage=604800'
+            }
+          });
+          ctx.waitUntil(cache.put(cacheKey, responseToCache));
+
+          return response;
+        } catch (e) {
+          console.error('[/api/icon] Error:', e.message);
+          return new Response('Icon fetch failed', { status: 500 });
+        }
+      }
+
 
       // 🔒 鉴权拦截 + 速率限制记录
       if (!isUser) {
