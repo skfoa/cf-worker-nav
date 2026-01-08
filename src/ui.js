@@ -423,6 +423,16 @@ export function renderUI(ssrData, ssrConfig) {
     transition: background 0.3s ease;
   }
 
+  /* 📱 移动端底栏极致瘦身 */
+  @media (max-width: 768px) {
+    .dock {
+      bottom: max(12px, env(safe-area-inset-bottom)); /* 适配全面屏手势条 */
+      padding: 8px 12px;
+      gap: 8px;
+      border-radius: 50px; /* 更小圆角 */
+    }
+  }
+
   .dock-item {
     font-size: 22px; cursor: pointer;
     transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -431,18 +441,26 @@ export function renderUI(ssrData, ssrConfig) {
     display: flex; align-items: center; justify-content: center;
     border-radius: 50%;
   }
+
+  /* 📱 移动端图标极致瘦身 */
+  @media (max-width: 768px) {
+    .dock-item { width: 32px; height: 32px; font-size: 18px; }
+  }
+
   .dock-item:hover { opacity: 1; background: rgba(255,255,255,0.1); transform: scale(1.1) translateY(-4px); }
   .dock-item.active { color: var(--accent); opacity: 1; background: rgba(59, 130, 246, 0.2); }
   
-  /* 工具提示 */
-  .dock-item::after {
-    content: attr(title); position: absolute; bottom: 100%; left: 50%;
-    transform: translateX(-50%) translateY(-10px);
-    background: rgba(0,0,0,0.8); color: #fff;
-    padding: 4px 8px; border-radius: 4px; font-size: 12px;
-    opacity: 0; pointer-events: none; transition: 0.2s; white-space: nowrap;
+  /* 工具提示 (仅在支持鼠标悬停的设备上显示) */
+  @media (hover: hover) {
+    .dock-item::after {
+      content: attr(title); position: absolute; bottom: 100%; left: 50%;
+      transform: translateX(-50%) translateY(-10px);
+      background: rgba(0,0,0,0.8); color: #fff;
+      padding: 4px 8px; border-radius: 4px; font-size: 12px;
+      opacity: 0; pointer-events: none; transition: 0.2s; white-space: nowrap;
+    }
+    .dock-item:hover::after { opacity: 1; transform: translateX(-50%) translateY(-16px); }
   }
-  .dock-item:hover::after { opacity: 1; transform: translateX(-50%) translateY(-16px); }
 
   /* 空状态提示与登录按钮 */
   .empty-state {
@@ -829,13 +847,15 @@ function renderGrid(customItems = null) {
       // Emoji 图标或内网 IP：不加载外部图片
       primaryIcon = '';
     } else if (item.icon) {
-      // 用户自定义图标 URL
-      primaryIcon = item.icon;
-      fallbackSources = ['/api/icon?domain=' + encodeURIComponent(domain)];
+      // 🚀 用户自定义图标：使用 wsrv.nl 全球 CDN 加速
+      // 自动 webp 转换 + 尺寸优化 (64x64) + 缓存
+      primaryIcon = \`https://wsrv.nl/?url=\${encodeURIComponent(item.icon)}&w=64&h=64&output=webp&il\`;
+      // 失败时回退到原始 URL，再回退到自动获取
+      fallbackSources = [item.icon, '/api/icon?domain=' + encodeURIComponent(domain)];
     } else {
       // 默认：通过代理获取图标
       primaryIcon = '/api/icon?domain=' + encodeURIComponent(domain);
-      fallbackSources = ['https://ico.moe/domain/' + domain];
+      fallbackSources = []; // /api/icon 已经是代理，通常不需要回退
     }
     
     const fallbacksJson = JSON.stringify(fallbackSources).replace(/"/g, '&quot;');
