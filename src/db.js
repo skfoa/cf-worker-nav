@@ -347,7 +347,9 @@ export default class DAO {
   static RATE_LIMIT = {
     MAX_ATTEMPTS: 5,          // 最大尝试次数
     WINDOW_MS: 60 * 1000,     // 时间窗口：1 分钟
-    LOCKOUT_MS: 15 * 60 * 1000 // 锁定时间：15 分钟
+    LOCKOUT_MS: 15 * 60 * 1000, // 锁定时间：15 分钟
+    CLEANUP_INTERVAL_MS: 24 * 60 * 60 * 1000, // 清理阈值：24 小时
+    CLEANUP_PROBABILITY: 0.05  // 清理概率：5%（避免每次请求都清理）
   };
 
   /**
@@ -356,6 +358,9 @@ export default class DAO {
    */
   async checkRateLimit(ip) {
     const now = this._now();
+
+    // 🧹 概率性清理过期记录（防止表无限增长）
+    await this.maybeCleanup();
 
     try {
       const record = await this.db.prepare(
@@ -461,16 +466,35 @@ export default class DAO {
   }
 
   /**
-   * 清理过期的锁定记录（可选：定期调用）
+   * 清理过期的登录记录（防止表无限增长）
+   * 删除条件：
+   * 1. 锁定已过期 (locked_until < now 且 locked_until > 0)
+   * 2. 或首次尝试时间超过 24 小时（无用的历史 IP 记录）
    */
   async cleanupExpiredLocks() {
     const now = this._now();
+    const cleanupThreshold = now - DAO.RATE_LIMIT.CLEANUP_INTERVAL_MS;
     try {
-      await this.db.prepare(
-        "DELETE FROM login_attempts WHERE locked_until > 0 AND locked_until < ?"
-      ).bind(now).run();
+      const result = await this.db.prepare(`
+        DELETE FROM login_attempts 
+        WHERE (locked_until > 0 AND locked_until < ?)
+           OR first_attempt < ?
+      `).bind(now, cleanupThreshold).run();
+      if (result.meta?.changes > 0) {
+        console.log(`[RateLimit] Cleaned up ${result.meta.changes} expired records`);
+      }
     } catch (e) {
       console.warn('[RateLimit] Cleanup failed:', e.message);
+    }
+  }
+
+  /**
+   * 概率性清理：避免每次请求都触发清理
+   * 在 checkRateLimit 开始时调用，以 5% 概率执行
+   */
+  async maybeCleanup() {
+    if (Math.random() < DAO.RATE_LIMIT.CLEANUP_PROBABILITY) {
+      await this.cleanupExpiredLocks();
     }
   }
 }
