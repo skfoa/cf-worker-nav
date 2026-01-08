@@ -20,4 +20,4 @@ enabled = true
 # TITLE = "我的默认导航"
 # ⚠️ TOKEN_SALT: 仅用于本地开发的占位符
 # 生产环境请在 Cloudflare Dashboard -> Settings -> Variables 中配置真实值
-TOKEN_SALT = "local_dev_salt_DO_NOT_USE_IN_PROD"
+# TOKEN_SALT = "local_dev_salt_DO_NOT_USE_IN_PROD"
