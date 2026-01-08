@@ -11,6 +11,7 @@ export function renderLoginPage(ssrConfig) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
 <title>${esc(ssrConfig.TITLE)} - 登录</title>
 <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png">
 <style>
@@ -118,7 +119,8 @@ export function renderUI(ssrData, ssrConfig) {
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
 <title>${esc(ssrConfig.TITLE)}</title>
 <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png">
 <style>
@@ -199,6 +201,7 @@ export function renderUI(ssrData, ssrConfig) {
     overflow-x: auto; scrollbar-width: none; align-items: center;
     max-width: 1200px; width: 100%;
     justify-content: center; /* 分类居中显示 */
+    -webkit-overflow-scrolling: touch; /* 📱 iOS 惯性回弹滚动 */
   }
   
   @media (max-width: 768px) { .nav-header { justify-content: flex-start; } }
