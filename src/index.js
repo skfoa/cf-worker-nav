@@ -64,7 +64,8 @@ function getSecurityHeaders() {
     'X-Content-Type-Options': 'nosniff',               // 禁止 MIME 类型嗅探
     'X-Frame-Options': 'DENY',                         // 禁止 iframe 嵌入
     'X-XSS-Protection': '1; mode=block',               // 旧版浏览器 XSS 过滤
-    'Referrer-Policy': 'strict-origin-when-cross-origin'  // 控制 Referer 信息泄露
+    'Referrer-Policy': 'strict-origin-when-cross-origin',  // 控制 Referer 信息泄露
+    'X-Robots-Tag': 'noindex, nofollow'                // 🔒 禁止搜索引擎索引
   };
 }
 
@@ -84,6 +85,12 @@ export default {
     // 0. 数据库绑定检查 (防止本地开发未配置导致崩溃)
     if (!env.DB) {
       return errorResp("Database D1 is not bound. Check wrangler.toml", 500);
+    }
+
+    // 🔒 安全提示：PASSWORD 未配置时输出警告（不阻塞请求）
+    if (!env.PASSWORD) {
+      console.warn('[Security] ⚠️ PASSWORD is not set! Root privileges will be unavailable.');
+      console.warn('[Security] 🔧 Set PASSWORD in wrangler.toml: [vars] or as a secret.');
     }
 
     const url = new URL(request.url);
@@ -156,6 +163,35 @@ export default {
     // 4. 公开路由 (Public Routes)
     // ==========================================
 
+    // 🔒 [GET] robots.txt - 禁止搜索引擎索引（防止域名被收录后触发关键词扫描封锁）
+    if (path === '/robots.txt') {
+      return new Response(
+        `# 🔒 Disallow all crawlers to prevent SEO indexing
+User-agent: *
+Disallow: /
+
+# Block common crawlers explicitly
+User-agent: Googlebot
+Disallow: /
+
+User-agent: Bingbot
+Disallow: /
+
+User-agent: Baiduspider
+Disallow: /
+
+User-agent: YandexBot
+Disallow: /
+`, {
+        headers: {
+          'Content-Type': 'text/plain',
+          'Cache-Control': 'public, max-age=86400',
+          'X-Robots-Tag': 'noindex, nofollow'
+        }
+      }
+      );
+    }
+
     // [GET] PWA Manifest (缓存 1 天)
     if (path === '/manifest.json') {
       let title = env.TITLE || "Nav";
@@ -186,20 +222,67 @@ export default {
       return json({ status: 'ok', ...(await dao.getStats()) });
     }
 
-    // [GET] 获取公共配置 (缓存 5 分钟)
+    // [GET] 获取公共配置 (边缘缓存 5 分钟)
     if (path === '/api/config' && method === 'GET') {
-      const conf = await dao.getConfigs();
-      return new Response(JSON.stringify({
-        title: conf.title || env.TITLE || "My Nav",
-        bg_image: conf.bg_image || env.BG_IMAGE || "",
-        allow_search: conf.allow_search !== 'false'
-      }), {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=300, s-maxage=300",  // ⚙️ 缓存 5 分钟
-          ...getCorsHeaders(env)
+      // 🔧 构建规范化的缓存 Key
+      const cacheKey = new Request(`${url.origin}/api/config`, { method: 'GET' });
+      const cache = caches.default;
+
+      try {
+        // ⚡ Step 1: 尝试从 Cloudflare Cache 读取
+        let cachedResponse = await cache.match(cacheKey);
+        if (cachedResponse) {
+          const headers = new Headers(cachedResponse.headers);
+          headers.set('X-Cache', 'HIT');
+          return new Response(cachedResponse.body, {
+            status: cachedResponse.status,
+            headers
+          });
         }
-      });
+
+        // ⚡ Step 2: 缓存未命中，查询数据库
+        const conf = await dao.getConfigs();
+        const configData = {
+          title: conf.title || env.TITLE || "My Nav",
+          bg_image: conf.bg_image || env.BG_IMAGE || "",
+          allow_search: conf.allow_search !== 'false'
+        };
+
+        const responseHeaders = {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=300, s-maxage=300",
+          "X-Cache": "MISS",
+          ...getCorsHeaders(env)
+        };
+
+        const response = new Response(JSON.stringify(configData), { headers: responseHeaders });
+
+        // ⚡ Step 3: 写入 Cloudflare Cache（使用 waitUntil 避免阻塞响应）
+        const responseToCache = new Response(JSON.stringify(configData), {
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=300, s-maxage=300"
+          }
+        });
+        ctx.waitUntil(cache.put(cacheKey, responseToCache));
+
+        return response;
+      } catch (e) {
+        // 缓存失败时降级为直接查询
+        console.warn('[/api/config] Cache error:', e.message);
+        const conf = await dao.getConfigs();
+        return new Response(JSON.stringify({
+          title: conf.title || env.TITLE || "My Nav",
+          bg_image: conf.bg_image || env.BG_IMAGE || "",
+          allow_search: conf.allow_search !== 'false'
+        }), {
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=300, s-maxage=300",
+            ...getCorsHeaders(env)
+          }
+        });
+      }
     }
 
     // [SSR] 首页渲染
@@ -257,9 +340,23 @@ export default {
 
     if (path.startsWith('/api/')) {
 
-      // 🔥 点击上报接口 (无需鉴权，公开可用)
+      // 🔥 点击上报接口 (无需鉴权，但校验来源防滥用)
       if (path === '/api/visit' && method === 'POST') {
         try {
+          // 🔒 防滥用：校验请求来源（Referer 或 Origin）
+          const referer = request.headers.get('Referer') || '';
+          const origin = request.headers.get('Origin') || '';
+          const allowedOrigin = env.ALLOWED_ORIGIN || url.origin;
+
+          // 检查是否来自允许的域名
+          const isValidReferer = referer.startsWith(allowedOrigin) || referer.startsWith(url.origin);
+          const isValidOrigin = origin === allowedOrigin || origin === url.origin;
+
+          if (!isValidReferer && !isValidOrigin) {
+            // 静默拒绝，不暴露具体原因给攻击者
+            return json({ status: 'ok' }, 200, env);
+          }
+
           const body = await request.json().catch(() => ({}));
           if (body.id) {
             // 等待数据库更新完成
