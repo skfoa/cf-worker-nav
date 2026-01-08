@@ -1306,15 +1306,29 @@ function togglePwd() {
 function setupDrag(className, dropHandler) {
   const els = document.querySelectorAll('.' + className);
   let dragSrc = null;
+  
+  // 📱 触摸拖拽状态
+  let touchState = {
+    el: null,           // 当前拖拽的元素
+    startX: 0,
+    startY: 0,
+    timeout: null,
+    isDragging: false,  // 是否已正式进入拖拽模式
+    ghost: null         // 跟随手指的幽灵元素
+  };
+  
+  // 常量配置
+  const LONG_PRESS_MS = 400;   // 长按阈值
+  const MOVE_THRESHOLD = 15;   // 移动容差（超过则视为滚动）
 
   els.forEach(el => {
     el.setAttribute('draggable', 'true');
     
+    // === PC 端：鼠标拖拽 ===
     el.addEventListener('dragstart', function(e) {
       this.classList.add('dragging');
       dragSrc = this;
       e.dataTransfer.effectAllowed = 'move';
-      // 兼容 Firefox
       e.dataTransfer.setData('text/plain', this.dataset.id);
     });
 
@@ -1334,6 +1348,147 @@ function setupDrag(className, dropHandler) {
       }
       return false;
     });
+
+    // === 📱 移动端：触摸拖拽 (Long Press 模式) ===
+    el.addEventListener('touchstart', function(e) {
+      const touch = e.touches[0];
+      touchState.startX = touch.clientX;
+      touchState.startY = touch.clientY;
+      touchState.el = this;
+      touchState.isDragging = false;
+      
+      // 启动长按计时器
+      touchState.timeout = setTimeout(() => {
+        // 正式进入拖拽模式
+        touchState.isDragging = true;
+        this.classList.add('dragging');
+        
+        // 震动反馈
+        if (navigator.vibrate) navigator.vibrate(50);
+        
+        // 创建跟随手指的幽灵元素
+        const rect = this.getBoundingClientRect();
+        touchState.ghost = this.cloneNode(true);
+        touchState.ghost.style.cssText = \`
+          position: fixed;
+          left: \${rect.left}px;
+          top: \${rect.top}px;
+          width: \${rect.width}px;
+          height: \${rect.height}px;
+          opacity: 0.8;
+          pointer-events: none;
+          z-index: 9999;
+          transform: scale(1.05);
+          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+          transition: none;
+        \`;
+        document.body.appendChild(touchState.ghost);
+        
+        // 原元素变淡
+        this.style.opacity = '0.3';
+      }, LONG_PRESS_MS);
+    }, { passive: true });
+
+    el.addEventListener('touchmove', function(e) {
+      const touch = e.touches[0];
+      const dx = touch.clientX - touchState.startX;
+      const dy = touch.clientY - touchState.startY;
+      
+      // 未进入拖拽模式时
+      if (!touchState.isDragging) {
+        // 移动超过阈值 → 取消长按，让页面正常滚动
+        if (Math.abs(dx) > MOVE_THRESHOLD || Math.abs(dy) > MOVE_THRESHOLD) {
+          clearTimeout(touchState.timeout);
+          touchState.timeout = null;
+        }
+        return; // 不阻止默认行为，允许滚动
+      }
+      
+      // ⚠️ 只有正式进入拖拽模式后才阻止滚动
+      e.preventDefault();
+      
+      // 移动幽灵元素跟随手指
+      if (touchState.ghost) {
+        const rect = touchState.el.getBoundingClientRect();
+        touchState.ghost.style.left = (rect.left + dx) + 'px';
+        touchState.ghost.style.top = (rect.top + dy) + 'px';
+      }
+      
+      // 高亮手指下方的目标元素
+      const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+      const dropTarget = targetEl?.closest('.' + className);
+      
+      els.forEach(el => {
+        if (el !== touchState.el) {
+          el.style.transform = '';
+          el.style.borderColor = '';
+        }
+      });
+      
+      if (dropTarget && dropTarget !== touchState.el) {
+        dropTarget.style.transform = 'scale(1.08)';
+        dropTarget.style.borderColor = 'var(--accent)';
+      }
+    }, { passive: false });
+
+    el.addEventListener('touchend', function(e) {
+      clearTimeout(touchState.timeout);
+      
+      // 清理幽灵元素
+      if (touchState.ghost) {
+        touchState.ghost.remove();
+        touchState.ghost = null;
+      }
+      
+      // 恢复原元素样式
+      if (touchState.el) {
+        touchState.el.style.opacity = '';
+        touchState.el.classList.remove('dragging');
+      }
+      
+      // 清理所有元素的高亮样式
+      els.forEach(el => {
+        el.style.transform = '';
+        el.style.borderColor = '';
+      });
+      
+      // 如果处于拖拽模式，执行放置
+      if (touchState.isDragging) {
+        const touch = e.changedTouches[0];
+        const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+        const dropTarget = targetEl?.closest('.' + className);
+        
+        if (dropTarget && dropTarget !== touchState.el) {
+          dropHandler(touchState.el, dropTarget);
+        }
+      }
+      
+      // 重置状态
+      touchState.el = null;
+      touchState.isDragging = false;
+    }, { passive: true });
+
+    el.addEventListener('touchcancel', function() {
+      clearTimeout(touchState.timeout);
+      
+      if (touchState.ghost) {
+        touchState.ghost.remove();
+        touchState.ghost = null;
+      }
+      
+      if (touchState.el) {
+        touchState.el.style.opacity = '';
+        touchState.el.classList.remove('dragging');
+      }
+      
+      els.forEach(el => {
+        el.style.transform = '';
+        el.style.borderColor = '';
+      });
+      
+      touchState.el = null;
+      touchState.isDragging = false;
+    }, { passive: true });
   });
 }
 
