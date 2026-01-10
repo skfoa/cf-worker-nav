@@ -648,6 +648,14 @@ export function renderUI(ssrData, ssrConfig) {
     </div>
     <input type="file" id="file-import" style="display:none" accept=".json" onchange="importData(this)">
   </div>
+  <div style="margin-top:20px;padding-top:15px;border-top:1px solid var(--glass-border);">
+    <p class="form-label">🔑 API Token 管理</p>
+    <div id="token-list" style="margin:10px 0;font-size:13px;color:var(--text-sub)">加载中...</div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <input id="token-name" placeholder="Token 名称 (可选)" style="flex:1;font-size:12px">
+      <button class="btn btn-primary" onclick="createToken()" style="font-size:12px">生成 Token</button>
+    </div>
+  </div>
 </div></div>
 
 <!-- 弹窗：自定义确认框 -->
@@ -766,20 +774,27 @@ function renderNav() {
     return;
   }
   
-  list.innerHTML = APP.data.map(cat => \`
-    <div class="nav-item \${cat.id === STATE.activeCatId ? 'active' : ''} \${cat.is_private ? 'private' : ''}" 
-         draggable="\${STATE.isEditing}" 
+  list.innerHTML = APP.data.map(cat => {
+    // 🔥 虚拟分类（如"常用推荐"）不可编辑/删除/拖拽
+    const isVirtual = cat.id === -1;
+    const editBtns = isVirtual ? '' : \`
+      <div class="cat-btn cat-del" onclick="deleteCat(\${cat.id}, event)" title="删除分类">✕</div>
+      <div class="cat-btn cat-edit" onclick="openCatModal(\${cat.id}, event)" title="修改分类">✎</div>
+    \`;
+    
+    return \`
+    <div class="nav-item \${cat.id === STATE.activeCatId ? 'active' : ''} \${cat.is_private ? 'private' : ''}\${isVirtual ? ' virtual' : ''}" 
+         draggable="\${STATE.isEditing && !isVirtual}" 
          data-id="\${cat.id}"
          onclick="switchCat(\${cat.id})">
       \${esc(cat.title)}
-      <!-- 删除按钮 (仅编辑模式显示) -->
-      <div class="cat-btn cat-del" onclick="deleteCat(\${cat.id}, event)" title="删除分类">✕</div>
-      <!-- 编辑按钮 (仅编辑模式显示) -->
-      <div class="cat-btn cat-edit" onclick="openCatModal(\${cat.id}, event)" title="修改分类">✎</div>
+      \${editBtns}
     </div>
-  \`).join('');
+    \`;
+  }).join('');
 
-  if (STATE.isEditing) setupDrag('nav-item', handleCatDrop);
+  // 🔧 只对非虚拟分类启用拖拽
+  if (STATE.isEditing) setupDrag('nav-item:not(.virtual)', handleCatDrop);
 }
 
 // 渲染网格内容
@@ -1171,6 +1186,68 @@ async function openSettings() {
   } catch (e) {
     document.getElementById('s-private').checked = false;
   }
+  
+  // 🔑 加载 Token 列表
+  loadTokenList();
+}
+
+// 🔑 Token 管理函数
+async function loadTokenList() {
+  const container = document.getElementById('token-list');
+  try {
+    const tokens = await api('/api/token/list');
+    if (tokens.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-sub);font-size:12px">暂无 Token，点击下方按钮生成</div>';
+      return;
+    }
+    container.innerHTML = tokens.map(t => {
+      const date = new Date(t.created_at).toLocaleDateString();
+      return \`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--glass-border)">
+        <div>
+          <strong>\${esc(t.name || '未命名')}</strong>
+          <span style="margin-left:8px;color:var(--text-sub);font-size:11px">\${date}</span>
+        </div>
+        <button class="btn btn-ghost" onclick="deleteToken(\${t.id})" style="font-size:11px;padding:4px 8px;color:var(--danger)">删除</button>
+      </div>\`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--danger)">加载失败</div>';
+  }
+}
+
+async function createToken() {
+  const nameInput = document.getElementById('token-name');
+  const name = nameInput.value.trim() || '默认 Token';
+  try {
+    const res = await api('/api/token/create', { name });
+    // 显示生成的 Token（仅显示一次）
+    showToast('✅ Token 已生成，请妥善保存！');
+    // 用弹窗显示 Token
+    showConfirm('🔑 新 Token 已生成', 
+      '请复制并保存以下 Token（仅显示一次）:\\n\\n' + res.token, 
+      '已复制', 
+      () => { 
+        navigator.clipboard.writeText(res.token).catch(() => {});
+        showToast('✅ 已复制到剪贴板');
+      }
+    );
+    nameInput.value = '';
+    loadTokenList();
+  } catch (e) {
+    showToast('❌ 创建失败: ' + e.message, 'error');
+  }
+}
+
+async function deleteToken(id) {
+  showConfirm('⚠️ 删除 Token', '确定删除此 Token 吗？删除后使用该 Token 的应用将无法访问。', '确认删除', async () => {
+    try {
+      await api('/api/token/delete', { id });
+      showToast('Token 已删除');
+      loadTokenList();
+    } catch (e) {
+      showToast('❌ 删除失败: ' + e.message, 'error');
+    }
+  });
 }
 
 async function saveConfig() {
