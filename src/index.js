@@ -245,7 +245,8 @@ Disallow: /
         const configData = {
           title: conf.title || env.TITLE || "My Nav",
           bg_image: conf.bg_image || env.BG_IMAGE || "",
-          allow_search: conf.allow_search !== 'false'
+          allow_search: conf.allow_search !== 'false',
+          private_mode: conf.private_mode || 'false'
         };
 
         const responseHeaders = {
@@ -274,7 +275,8 @@ Disallow: /
         return new Response(JSON.stringify({
           title: conf.title || env.TITLE || "My Nav",
           bg_image: conf.bg_image || env.BG_IMAGE || "",
-          allow_search: conf.allow_search !== 'false'
+          allow_search: conf.allow_search !== 'false',
+          private_mode: conf.private_mode || 'false'
         }), {
           headers: {
             "Content-Type": "application/json",
@@ -521,8 +523,14 @@ Disallow: /
 
         if (path === '/api/config' && method === 'POST') {
           await dao.updateConfig(body.key, body.value);
+
+          // 🔧 清除 /api/config 缓存，确保新设置立即生效
+          const cacheKey = new Request(`${url.origin}/api/config`, { method: 'GET' });
+          ctx.waitUntil(caches.default.delete(cacheKey));
+
           return json({ status: 'ok', key: body.key, value: body.value });
         }
+        if (path === '/api/token/list') return json(await dao.listTokens());
         if (path === '/api/token/create') return json(await dao.createToken(body.name));
         if (path === '/api/token/delete') return json(await dao.deleteToken(body.id));
 
