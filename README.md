@@ -36,6 +36,7 @@
 ### 第一步：Fork 本仓库
 
 点击右上角 **Fork** 按钮，将项目复制到你的 GitHub 账号下。
+<img width="1796" height="924" alt="image" src="https://github.com/user-attachments/assets/601b91af-8b60-4b58-871d-dd3b4a245e8d" />
 
 
 
