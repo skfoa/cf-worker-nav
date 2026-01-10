@@ -129,6 +129,13 @@ export default class DAO {
     return await this.db.prepare("DELETE FROM tokens WHERE id = ?").bind(id).run();
   }
 
+  async listTokens() {
+    const res = await this.db.prepare(
+      "SELECT id, name, created_at FROM tokens ORDER BY created_at DESC"
+    ).all();
+    return res.results || [];
+  }
+
   // ===========================================
   // 分类管理 (Category CRUD)
   // ===========================================
