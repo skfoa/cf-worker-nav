@@ -98,8 +98,7 @@
 | Name | Value | 说明 |
 |------|-------|------|
 | `TOKEN_SALT` | 随机字符串（如 `abc123xyz`） | Token 加密盐值，增强安全性 |
-
-
+<img width="1782" height="964" alt="image" src="https://github.com/user-attachments/assets/f27ba618-637b-4a94-a555-3b18d4913920" />
 
 ---
 
