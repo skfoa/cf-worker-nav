@@ -404,6 +404,52 @@ export function renderUI(ssrData, ssrConfig) {
   /* 只有在 editing 类下才显示 */
   .editing .btn-edit-link, .editing .btn-del-link { display: flex; }
 
+  /* 📝 描述 Tooltip (仅在支持悬停的设备上显示) */
+  @media (hover: hover) {
+    .card-wrap.has-tooltip::after {
+      content: attr(data-desc);
+      position: absolute;
+      bottom: -8px; left: 50%;
+      transform: translateX(-50%) translateY(100%);
+      background: rgba(0, 0, 0, 0.9);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.5;
+      max-width: 200px;
+      width: max-content;
+      text-align: center;
+      white-space: normal;
+      word-wrap: break-word;
+      z-index: 50;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    .card-wrap.has-tooltip:hover::after {
+      opacity: 1;
+      transform: translateX(-50%) translateY(calc(100% + 4px));
+    }
+    /* 小箭头 */
+    .card-wrap.has-tooltip::before {
+      content: '';
+      position: absolute;
+      bottom: -8px; left: 50%;
+      transform: translateX(-50%) translateY(100%);
+      border: 6px solid transparent;
+      border-bottom-color: rgba(0, 0, 0, 0.9);
+      z-index: 51;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .card-wrap.has-tooltip:hover::before {
+      opacity: 1;
+    }
+  }
+
   /* 底部 Dock */
   .footer {
     text-align: center; margin-top: 60px;
@@ -876,8 +922,13 @@ function renderGrid(customItems = null) {
     const fallbacksJson = JSON.stringify(fallbackSources).replace(/"/g, '&quot;');
     const showFallbackFirst = isEmojiIcon || isInternalIP || !primaryIcon;
 
+    // 🔧 描述 Tooltip
+    const hasDesc = item.desc && item.desc.trim();
+    const descAttr = hasDesc ? \` data-desc="\${esc(item.desc)}"\` : '';
+    const tooltipClass = hasDesc ? ' has-tooltip' : '';
+
     return \`
-    <div class="card-wrap" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}">
+    <div class="card-wrap\${tooltipClass}" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}"\${descAttr}>
       <a class="card" href="\${esc(item.url)}" target="_blank" 
          onclick="trackClick(\${item.id}); \${STATE.isEditing ? 'return false' : ''}">
         \${primaryIcon ? \`<img src="\${esc(primaryIcon)}" loading="lazy" data-fallbacks="\${fallbacksJson}" onerror="handleIconError(this)">\` : ''}
