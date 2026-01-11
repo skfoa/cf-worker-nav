@@ -490,6 +490,7 @@ Disallow: /
           '/api/import',
           '/api/export',
           // '/api/config', // 注意：GET 是公开的，POST 需要 Root，下面单独判断
+          '/api/token/list',     // 🔒 Token 管理需要 Root 权限
           '/api/token/create',
           '/api/token/delete'
         ];
