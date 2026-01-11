@@ -922,13 +922,12 @@ function renderGrid(customItems = null) {
     const fallbacksJson = JSON.stringify(fallbackSources).replace(/"/g, '&quot;');
     const showFallbackFirst = isEmojiIcon || isInternalIP || !primaryIcon;
 
-    // 🔧 描述 Tooltip
+    // 🔧 Tooltip：有描述显示描述，无描述显示标题+URL
     const hasDesc = item.desc && item.desc.trim();
-    const descAttr = hasDesc ? \` data-desc="\${esc(item.desc)}"\` : '';
-    const tooltipClass = hasDesc ? ' has-tooltip' : '';
+    const tooltipText = hasDesc ? item.desc : \`\${item.title}\\n\${item.url}\`;
 
     return \`
-    <div class="card-wrap\${tooltipClass}" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}"\${descAttr}>
+    <div class="card-wrap has-tooltip" draggable="\${STATE.isEditing && !customItems}" data-id="\${item.id}" data-desc="\${esc(tooltipText)}">
       <a class="card" href="\${esc(item.url)}" target="_blank" 
          onclick="trackClick(\${item.id}); \${STATE.isEditing ? 'return false' : ''}">
         \${primaryIcon ? \`<img src="\${esc(primaryIcon)}" loading="lazy" data-fallbacks="\${fallbacksJson}" onerror="handleIconError(this)">\` : ''}
