@@ -1,0 +1,52 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* ===================================
+ * 自定义毛玻璃主题 — 保留原有设计语言
+ * =================================== */
+
+@theme {
+  --color-glass: rgba(30, 30, 30, 0.65);
+  --color-glass-border: rgba(255, 255, 255, 0.12);
+  --color-glass-light: rgba(255, 255, 255, 0.75);
+  --color-glass-border-light: rgba(0, 0, 0, 0.1);
+  --color-nav-dark: rgba(0, 0, 0, 0.95);
+  --color-nav-light: rgba(255, 255, 255, 0.9);
+  --color-dock-dark: rgba(15, 15, 15, 0.9);
+  --color-dock-light: rgba(255, 255, 255, 0.9);
+  --color-overlay-dark: rgba(15, 23, 42, 0.4);
+  --color-overlay-light: rgba(255, 255, 255, 0.3);
+}
+
+/* 毛玻璃卡片工具类 */
+@utility glass-card {
+  background: var(--color-glass);
+  border: 1px solid var(--color-glass-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+[data-theme="light"] .glass-card {
+  background: var(--color-glass-light);
+  border-color: var(--color-glass-border-light);
+}
+
+/* 背景遮罩 */
+@utility bg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* 隐藏滚动条但保留功能 */
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+/* 移除移动端点击高亮 */
+@utility tap-none {
+  -webkit-tap-highlight-color: transparent;
+}

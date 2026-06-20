@@ -1,0 +1,50 @@
+name: Deploy Worker
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Build Tailwind CSS
+        run: npm run build:css
+
+      - name: Inject D1 Database ID
+        run: |
+          sed -i "s|D1_ID_PLACEHOLDER|${{ secrets.CLOUDFLARE_D1_ID }}|g" wrangler.toml
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          secrets: |
+            PASSWORD
+            TOKEN_SALT
+        env:
+          PASSWORD: ${{ secrets.PASSWORD }}
+          TOKEN_SALT: ${{ secrets.TOKEN_SALT }}
+
+      - name: Initialize D1 Database
+        if: github.event_name == 'workflow_dispatch'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 execute nav-db --remote --file=migrations/0001_init.sql
+        continue-on-error: true

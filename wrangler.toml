@@ -1,0 +1,17 @@
+name = "cf-worker-nav"
+main = "src/index.tsx"
+compatibility_date = "2024-12-01"
+minify = true
+
+# 静态资源 (Tailwind CSS 编译产物)
+assets = { directory = "public" }
+
+# D1 数据库绑定
+[[d1_databases]]
+binding = "DB"
+database_name = "nav-db"
+database_id = "D1_ID_PLACEHOLDER"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true

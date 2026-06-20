@@ -1,0 +1,25 @@
+{
+  "name": "cf-worker-nav",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:css && wrangler dev",
+    "build:css": "npx @tailwindcss/cli -i styles/app.css -o public/output.css --minify",
+    "deploy": "npm run build:css && wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "@hono/zod-validator": "^0.5.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.99.0",
+    "typescript": "^5.7.0",
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "tailwindcss": "^4.1.0",
+    "@tailwindcss/cli": "^4.1.0",
+    "daisyui": "^5.0.0"
+  }
+}
