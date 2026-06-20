@@ -10,7 +10,7 @@ assets = { directory = "public" }
 [[d1_databases]]
 binding = "DB"
 database_name = "nav-db"
-database_id = "D1_ID_PLACEHOLDER"
+database_id = "0254a5ec-1720-4aa0-93ae-72b1e5a23687"
 migrations_dir = "migrations"
 
 [observability]
