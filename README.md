@@ -11,8 +11,8 @@
 - 🔥 **热门推荐** — 自动统计点击量，智能推荐常用链接（最多 16 个）
 - 🎨 **精美 UI** — 毛玻璃效果、DaisyUI 组件库、响应式设计
 - 🌙 **主题切换** — 亮色 / 暗色主题一键切换，持久化保存
-- 🔑 **API Token** — SHA-256 加盐哈希存储，支持多用户分权
-- 🔐 **私有模式** — 开启后首页变为登录页，需认证才能查看
+- 🔑 **API Token** — 预留标准 Token 鉴权，支持第三方工具自动化扩展
+- 👻 **幽灵入口** — 摒弃传统登录页，采用隐藏式 `/admin` 零信任入口，抗扫描
 - 📱 **PWA 支持** — 可添加到手机主屏幕，离线可用
 - 🖱️ **拖拽排序** — SortableJS 拖拽排序，实时持久化到 D1
 - ⚡ **极致性能** — 边缘 CDN 缓存 + 自动化 JS 混淆压缩，毫秒级首屏加载
@@ -261,10 +261,10 @@ TITLE=我的导航
 
 ### 登录管理
 
-1. 访问你的导航站
-2. 如开启了私有模式，首页会显示登录页，输入 `PASSWORD` 即可登录
-3. 如未开启私有模式，页面直接显示导航内容。登录方式：在浏览器地址栏输入 `你的域名/?auth=1`，然后在登录页输入密码
-4. 登录成功后底部会出现管理 Dock 栏
+1. 正常访问你的导航站，只对外展示公开链接，私有链接彻底隐藏。
+2. **进入管理后台**：在浏览器地址栏输入 `你的域名/admin`。
+3. 页面右下角将“幽灵浮现”一个 🔑 图标，点击并输入 `PASSWORD`。
+4. 验证成功后，自动唤出全功能管理 Dock 栏，并解锁私有数据。
 
 ### 功能操作
 
@@ -335,8 +335,8 @@ cf-worker-nav/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/health` | 健康检查，返回分类/链接数量 |
-| GET | `/api/config` | 公共配置（标题、背景、私有模式），5 分钟边缘缓存 |
-| GET | `/api/icon?domain=xxx` | 图标代理（Google Favicon），7 天边缘缓存 |
+| GET | `/api/config` | 公共配置（标题、背景），5 分钟边缘缓存 |
+| GET | `/api/icon?domain=xxx` | 图标代理（DuckDuckGo），防止隐私域名泄露，7 天缓存 |
 | POST | `/api/visit` | 点击上报（校验 Referer 来源） |
 
 ### 需要登录（Authorization: Bearer token）
@@ -378,6 +378,7 @@ cf-worker-nav/
 | XSS 防护 | Hono JSX 自动转义 + `safeJsonStringify` |
 | 协议白名单 | D1 CHECK 约束 + Zod 校验，仅允许 http/https |
 | SEO 防爬 | robots.txt + X-Robots-Tag + meta noindex 三重防护 |
+| 零信任 404 | 鉴权失败与违规嗅探强制返回伪装 `404 Not Found`，抗扫描防御 |
 | Token 安全 | SHA-256 加盐哈希存储，数据库不保存明文 |
 | Clickjacking | X-Frame-Options: DENY 禁止 iframe 嵌入 |
 | 请求体限制 | Hono `bodyLimit()` — API 请求体上限 50KB |
@@ -406,7 +407,7 @@ cf-worker-nav/
 > 在 Cloudflare Dashboard 删除 D1 数据库，重新创建同名 `nav-db`，执行 migration SQL，然后重新部署。
 
 **Q: 本地开发图标不显示？**
-> 图标通过 Google Favicon API 代理获取，部分网络环境可能无法访问。部署到 Cloudflare 后正常显示。
+> 图标通过 DuckDuckGo API 代理获取，国内部分网络环境可能无法访问。部署到 Cloudflare 边缘节点后会自动穿透，均可正常显示。
 
 **Q: 如何从旧版本升级？**
 > 旧版使用 `index.js` + `db.js` + `ui.js` 单体架构。升级时保留 D1 数据库数据不变，替换代码后重新部署即可，数据库 Schema 完全兼容。
