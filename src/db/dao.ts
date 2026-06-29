@@ -46,13 +46,17 @@ export class DAO {
 
     const catSql = isLogin
       ? 'SELECT * FROM categories ORDER BY sort_order ASC, id ASC'
-      : 'SELECT * FROM categories WHERE COALESCE(is_private, 0) = 0 ORDER BY sort_order ASC, id ASC'
+      : `SELECT * FROM categories 
+         WHERE COALESCE(is_private, 0) = 0 
+           AND (parent_id IS NULL OR parent_id IN (SELECT id FROM categories WHERE COALESCE(is_private, 0) = 0))
+         ORDER BY sort_order ASC, id ASC`
 
     const linksSql = isLogin
       ? 'SELECT * FROM links ORDER BY sort_order ASC, id ASC'
       : `SELECT l.* FROM links l
          INNER JOIN categories c ON l.category_id = c.id
          WHERE COALESCE(c.is_private, 0) = 0
+           AND (c.parent_id IS NULL OR c.parent_id IN (SELECT id FROM categories WHERE COALESCE(is_private, 0) = 0))
            AND COALESCE(l.is_private, 0) = 0
          ORDER BY l.sort_order ASC, l.id ASC`
 
