@@ -1,420 +1,171 @@
 # ☁️ Cloudflare Worker Nav
 
-一个极简、美观、安全的个人导航站，基于 **Hono + TypeScript + Tailwind CSS v4 + DaisyUI v5** 构建，运行在 Cloudflare Workers 边缘网络上。
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=Cloudflare&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![Hono](https://img.shields.io/badge/Hono-E36002?style=for-the-badge&logo=hono&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
 
-## ✨ 功能特性
+这是一个**极简、极速、极度安全**的个人导航站。基于 `Hono` 边缘计算框架与 `Tailwind CSS v4` 构建，完全运行在 Cloudflare 的 Serverless 边缘网络上。
 
-- ⚡ **零成本部署** — Cloudflare Workers 免费额度足够个人使用
-- 💾 **D1 数据库** — SQLite 边缘数据库，强一致性，无需额外服务
-- 🔒 **安全加固** — CSP 安全头、CSRF 防护、速率限制、时序安全密码验证
-- 📁 **多级分类** — 支持父子两级嵌套分类（Subcategories），悬浮式响应菜单
-- 🔥 **热门推荐** — 自动统计点击量，智能推荐常用链接（最多 16 个）
-- 🎨 **精美 UI** — 毛玻璃效果、DaisyUI 组件库、响应式设计
-- 🌙 **主题切换** — 亮色 / 暗色主题一键切换，持久化保存
-- 🔑 **API Token** — 预留标准 Token 鉴权，支持第三方工具自动化扩展
-- 👻 **幽灵入口** — 摒弃传统登录页，采用隐藏式 `/admin` 零信任入口，抗扫描
-- 📱 **PWA 支持** — 可添加到手机主屏幕，离线可用
-- 🖱️ **拖拽排序** — SortableJS 拖拽排序，实时持久化到 D1
-- ⚡ **极致性能** — 边缘 CDN 缓存 + 自动化 JS 混淆压缩，毫秒级首屏加载
-- 📦 **数据导入导出** — JSON 格式备份，支持批量导入
+它不仅拥有现代化的毛玻璃 UI 设计，更在底层融入了**“零信任” (Zero-Trust) 安全理念**，是为您量身打造的下一代纯净无界导航引擎。
 
 ---
 
-## 🛠️ 技术栈
+## ✨ 核心特性 (Features)
 
-| 层 | 技术 | 版本 |
-|---|------|------|
-| 运行时 | Cloudflare Workers | — |
-| 后端框架 | Hono | v4 |
-| 语言 | TypeScript | v5 |
-| 数据库 | Cloudflare D1 (SQLite) | — |
-| 输入校验 | Zod | v3 |
-| CSS 框架 | Tailwind CSS | v4 |
-| UI 组件 | DaisyUI | v5 |
-| 拖拽 | SortableJS | v1.15 |
-| 前端交互 | HTMX + Vanilla JS | — |
+### 🚀 极致的性能与架构
+- ⚡ **Serverless 边缘部署** — 依托 Cloudflare 全球数百个节点，访问请求就近渲染，毫秒级响应。告别传统服务器，**永久免费，零维护成本**。
+- 💾 **D1 原生边缘数据库** — 彻底抛弃臃肿的 MySQL/Redis，采用 Cloudflare 原生 SQLite 边缘数据库，支持强一致性事务，数据永不丢失。
+- 📦 **自动化深度优化** — 构建时自动剔除无用 CSS 样式，并对 JS 进行混淆压缩，配合全球 CDN 缓存，打造极致首屏加载体验。
+- 📱 **全平台 PWA 支持** — 支持添加到手机或电脑的主屏幕，沉浸式全屏体验，离线可用。
+
+### 🛡️ Zero-Trust 幽灵防御体系
+- 👻 **隐身模式 (Ghost Admin)** — 彻底摒弃传统的 `/login` 暴露入口。采用全站隐藏的 `/admin` 幽灵路由，只有您自己知道控制台的唤醒密码。
+- 🚫 **404 伪装拦截** — 面对未经授权的 API 请求或恶意嗅探，系统不再返回 `401/403` 报错，而是直接强制返回 `404 Not Found` 伪装，让漏洞扫描器误以为这是一个静态空站，杜绝算力消耗。
+- 🔐 **法医级安全加固** — 内置 CSP 安全头、CSRF 跨站防御、请求体体积限制、基于 `Web Crypto` 的时序安全密码比对，以及防暴力破解 IP 锁定机制。
+- 🕵️ **隐私级图标代理** — 独创的 `DuckDuckGo API` 站点图标边缘代理机制，彻底切断第三方追踪器对您私有书签域名的隐私窥探。
+
+### 🎨 现代美学与卓越交互
+- 💠 **自适应毛玻璃 UI** — 采用最新的 DaisyUI v5 组件库，融合动态高斯模糊与暗黑模式 (Dark Mode)，一键切换，视觉体验极具未来感。
+- 📁 **多级嵌套分类** — 原生支持父子两级嵌套分类（Subcategories），通过平滑的悬浮下拉菜单呈现海量书签。
+- 🖱️ **无缝拖拽排序** — 深度集成 SortableJS，鼠标拖拽卡片即可实时完成重排，位置信息瞬间持久化至边缘云端。
+- 🔥 **智能高频推荐** — 自动统计每一次书签点击，智能萃取并置顶“常用推荐”集合（最高展示 16 个），越用越懂你。
 
 ---
 
-## 🚀 部署教程
+## 🛠️ 技术栈 (Tech Stack)
 
-提供三种部署方式，选择其中一种即可。
+| 架构层级 | 使用技术 | 版本 | 为什么选择它？(核心优势) |
+|---|---|---|---|
+| **边缘计算** | Cloudflare Workers | — | 全球边缘节点覆盖，零冷启动延迟，每月 10 万次免费读写额度。 |
+| **边缘框架** | Hono | v4 | 专为边缘计算打造的 Web 框架，极速路由映射，体积小到极致。 |
+| **开发语言** | TypeScript | v5 | 提供严苛的静态类型推断，在编译期扼杀 90% 的低级错误。 |
+| **边缘数据** | Cloudflare D1 | — | Serverless 架构下的原生 SQLite，无缝接入 Worker 且极度稳定。 |
+| **样式引擎** | Tailwind CSS | v4 | 原子化 CSS 鼻祖，配合 JIT 引擎实现真正的零冗余代码打包。 |
+| **组件设计** | DaisyUI | v5 | 极其优雅的语义化 UI 组件库，极大地简化了 Tailwind 类名堆砌。 |
+| **前端交互** | Vanilla JS (原生) | — | 彻底抛弃 React/Vue 沉重的客户端运行时，实现毫秒级页面注水。 |
+| **输入校验** | Zod | v3 | 完美契合 TypeScript 的前后端同构校验方案，拦截一切脏数据。 |
 
-### 📋 前置条件
+---
 
-- 一个 [Cloudflare](https://dash.cloudflare.com) 账号（免费注册）
-- 一个 [GitHub](https://github.com) 账号（方式二、三需要）
+## 🚀 部署指南 (Deployment)
 
-### 公共步骤：创建 D1 数据库
+我们为您提供了两种主流部署方式，请根据您的开发习惯任选其一。
 
-无论选择哪种部署方式，都需要先创建数据库：
+### 📋 必须的前置步骤：创建 D1 数据库
+> 无论您选择哪种部署方式，都必须先在 Cloudflare 创建好数据库承载空间。
 
 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
 2. 左侧菜单展开 **Workers & Pages** → 点击 **D1 SQL Database**
 3. 点击 **Create database**，名称填写 `nav-db`
-4. 创建完成后，复制页面上显示的 **Database ID**（后面要用）
+4. 创建完成后，复制页面上显示的 **Database ID**（由横线连接的长字符串，后面要用）。
 
 ---
 
-### 方式一：Cloudflare 上传部署（Wrangler CLI）
+### 🌟 方式一：自动化流水线部署 (GitHub Actions) - 强烈推荐
+> **全程在浏览器端操作，无需配置任何本地开发环境，后续更新完全自动化！**
 
-> 本地构建后通过命令行直接上传到 Cloudflare，最灵活
+#### 1. Fork 本仓库
+点击页面右上角 **Fork** 按钮，将本仓库复制到您的账号下。
 
-**前提**：本地已安装 [Node.js](https://nodejs.org) v18+
+#### 2. 获取 Cloudflare 凭证
+- **API Token**：[点击这里生成 Token](https://dash.cloudflare.com/profile/api-tokens) → 选择 `Edit Cloudflare Workers` 模板 → 生成并**妥善保存**。
+- **Account ID**：在 Cloudflare Dashboard → Workers & Pages 面板右侧复制。
 
-#### 1. 克隆仓库并安装依赖
+#### 3. 配置 GitHub 密钥
+在您 Fork 后的仓库页面 → **Settings** → **Secrets and variables** → **Actions** → 点击 **New repository secret**，依次添加以下五个变量：
+
+| 密钥名称 (Name) | 密钥内容 (Value) |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | 刚刚生成的 API Token |
+| `CLOUDFLARE_ACCOUNT_ID` | 您的 Cloudflare 账户 ID |
+| `CLOUDFLARE_D1_ID` | **前置步骤**中创建的 D1 Database ID |
+| `PASSWORD` | 您想设置的后台最高权限登录密码 |
+| `TOKEN_SALT` | 随意填写一段复杂的英文字符串，用于数据加密 |
+
+#### 4. 一键触发部署
+进入仓库的 **Actions** 标签页 → 允许运行工作流 → 点击左侧 **Deploy Worker** → 右侧点击 **Run workflow**。
+*(等待 1-2 分钟，出现绿色对勾即代表全世界都能访问您的专属导航站了！)*
+
+---
+
+### 💻 方式二：本地硬核部署 (Wrangler CLI)
+> **适合前端开发者，可以在本地修改代码后直接一键推送到云端。**
+
+**前置要求**：已安装 Node.js v18+ 并且具备基本的终端操作能力。
 
 ```bash
+# 1. 克隆并进入目录
 git clone https://github.com/<你的用户名>/cf-worker-nav.git
 cd cf-worker-nav
 npm install
-```
 
-#### 2. 登录 Cloudflare
-
-```bash
+# 2. 登录您的 Cloudflare 账号
 npx wrangler login
-```
 
-浏览器会弹出授权页面，点击 **Allow** 完成登录。
+# 3. 修改配置文件
+# 打开项目中的 wrangler.toml，将 database_id 替换为您真实获取到的 ID。
 
-#### 3. 修改 `wrangler.toml`
-
-将 `database_id` 替换为你在公共步骤中获取的 Database ID：
-
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "nav-db"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # ← 替换为你的 ID
-```
-
-#### 4. 初始化远程数据库
-
-```bash
+# 4. 初始化远程云端数据库表结构
 npx wrangler d1 execute nav-db --remote --file=migrations/0001_init.sql
-```
 
-#### 5. 构建并部署
-
-```bash
+# 5. 构建代码并部署到云端
 npm run deploy
 ```
 
-#### 6. 配置环境变量
-
-部署成功后，在 [Cloudflare Dashboard](https://dash.cloudflare.com) → **Workers & Pages** → 点击 `cf-worker-nav` → **Settings** → **Variables and Secrets**，添加：
-
-| 变量名 | 类型 | 说明 |
-|--------|------|------|
-| `PASSWORD` | Secret | 管理员登录密码（**必填**） |
-| `TOKEN_SALT` | Secret | Token 加密盐值（推荐，填一个随机字符串） |
-
-> ⚠️ 添加环境变量后 Worker 会自动重启生效，无需重新部署。
-
-后续更新代码只需再次运行 `npm run deploy`。
+> **注意**：部署完成后，请前往 Cloudflare 控制台 -> Workers -> `cf-worker-nav` -> Settings -> Variables，手动添加 `PASSWORD` 环境变量作为您的登录密码。
 
 ---
 
-### 方式二：Cloudflare 绑定部署（Dashboard 连接 Git）
+## 📖 使用指南
 
-> 在 Cloudflare Dashboard 中绑定 GitHub 仓库，每次 push 自动构建部署
+### 👻 如何召唤幽灵后台？
+由于系统取消了常规的登录入口，访客只能看到您公开的干净书签。
+1. 在浏览器地址栏，于您的域名后加上 `/admin` (例如：`https://nav.yourdomain.com/admin`)
+2. 此时页面右下角将“幽灵浮现”一个隐藏的 🔑 图标。
+3. 点击它，输入您的 `PASSWORD`。验证成功后，全功能的管理 Dock 栏将从底部弹出，私密书签也将瞬间解密展现。
 
-#### 1. Fork 本仓库到你的 GitHub
-
-#### 2. 修改 `wrangler.toml`
-
-在 GitHub 网页端编辑 `wrangler.toml`，将 `D1_ID_PLACEHOLDER` 替换为你的 Database ID。
-
-#### 3. 在 Cloudflare Dashboard 创建 Worker
-
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com) → 左侧 **Workers & Pages**
-2. 点击 **Create** → 选择 **Worker** 标签
-3. 选择 **Import a repository** / **Connect to Git**
-4. 授权 GitHub 并选择你 Fork 的仓库
-
-#### 4. 配置构建设置
-
-在构建配置页面填写：
-
-| 配置项 | 值 |
-|--------|-----|
-| Build command | `npm run build:css` |
-| Deploy command | `npx wrangler deploy` |
-
-#### 5. 初始化数据库
-
-在 Dashboard 左侧 **D1** → 点击 `nav-db` → **Console** 标签，将 `migrations/0001_init.sql` 的全部内容粘贴到输入框中执行。
-
-#### 6. 添加环境变量
-
-在 Worker 的 **Settings** → **Variables and Secrets** 中添加：
-
-| 变量名 | 类型 | 说明 |
-|--------|------|------|
-| `PASSWORD` | Secret | 管理员登录密码（**必填**） |
-| `TOKEN_SALT` | Secret | Token 加密盐值（推荐） |
-
-完成后每次 push 到 GitHub 的 `main` 分支会自动触发部署。
+### 🕹️ 核心操作
+| 需求 | 操作方式 |
+|---|---|
+| **新增书签/分类** | 唤出 Dock 栏后，点击对应的「➕ 添加」或「📁 分类」按钮。 |
+| **拖拽排序** | 在 Dock 栏点击「🔀 排序」解锁卡片，拖动调整位置后点击保存。 |
+| **导入旧数据** | 在 Dock 栏点击「⚙️ 设置」，选择您的旧版 JSON 备份文件一键导入。 |
 
 ---
 
-### 方式三：GitHub Actions 自动部署
+## ❓ 极客问答 (FAQ)
 
-> Fork 后全程在网页端操作，无需本地环境
+**Q: 部署后访问显示 "Database D1 is not bound" 是怎么回事？**
+> 这是因为云端没有找到对应的数据库。请检查 `wrangler.toml` (方式二) 或 GitHub Secrets 中的 `CLOUDFLARE_D1_ID` (方式一) 是否填写了正确的**数据库 ID**（注意：是 UUID 格式的 ID，不是数据库名字）。
 
-#### 1. Fork 本仓库
-
-点击 GitHub 页面右上角 **Fork** 按钮。
-
-#### 2. 创建 Cloudflare API Token
-
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
-2. 右上角头像 → **My Profile** → **API Tokens**
-3. 点击 **Create Token** → 选择 **Edit Cloudflare Workers** 模板
-4. 点击 **Continue to summary** → **Create Token**
-5. ⚠️ **复制并保存 Token**（只显示一次！）
-
-#### 3. 获取 Account ID
-
-进入 Cloudflare Dashboard → 左侧 **Workers & Pages** → 右侧面板复制 **Account ID**
-
-#### 4. 配置 GitHub Secrets
-
-在 Fork 的仓库 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，逐个添加：
-
-| Name | Value | 说明 |
-|------|-------|------|
-| `CLOUDFLARE_API_TOKEN` | 第 2 步的 Token | Cloudflare API 令牌 |
-| `CLOUDFLARE_ACCOUNT_ID` | 第 3 步的 ID | Cloudflare 账户 ID |
-| `CLOUDFLARE_D1_ID` | 公共步骤的 Database ID | D1 数据库 ID |
-| `PASSWORD` | 你设置的管理员密码 | 登录密码 |
-| `TOKEN_SALT` | 随机字符串（可选） | Token 加密盐值 |
-
-#### 5. 触发首次部署
-
-1. 进入仓库 → **Actions** 标签页
-2. 如提示启用 Actions，点击 **I understand my workflows, go ahead and enable them**
-3. 左侧选择 **Deploy Worker** → 点击 **Run workflow** → **Run workflow**
-4. 等待 1-2 分钟，显示绿色 ✓ 即部署成功
-
-> 💡 首次手动触发（`workflow_dispatch`）会自动执行数据库初始化。后续 push 到 `main` 分支也会自动部署。
-
----
-
-### 访问你的导航站
-
-部署成功后访问：
-
-```
-https://cf-worker-nav.<你的子域名>.workers.dev
-```
-
-> 💡 子域名可在 Cloudflare Dashboard → Workers & Pages → Overview 页面查看
-
-### 🌐 自定义域名（可选）
-
-1. 进入 Cloudflare Dashboard → **Workers & Pages** → 点击你的 Worker
-2. **Settings** → **Domains & Routes** → **Custom Domains**
-3. 添加你的域名（需先将域名的 DNS 托管到 Cloudflare）
-
----
-
-## 🔧 本地开发
-
-```bash
-# 1. 安装依赖
-npm install
-
-# 2. 创建本地环境变量
-cp .env.example .dev.vars
-
-# 3. 初始化本地 D1 数据库
-npx wrangler d1 execute nav-db --local --file=migrations/0001_init.sql
-
-# 4. 构建 CSS + 启动开发服务器
-npm run dev
-```
-
-编辑 `.dev.vars` 配置本地环境变量（该文件不会被提交到 Git）：
-
-```env
-PASSWORD=admin
-TOKEN_SALT=my_local_dev_salt
-TITLE=我的导航
-```
-
-### 常用命令
-
-| 命令 | 说明 |
-|------|------|
-| `npm run dev` | 构建 CSS + 启动本地开发服务器 |
-| `npm run build:css` | 仅构建 Tailwind CSS |
-| `npm run deploy` | 构建 CSS + 部署到 Cloudflare |
-| `npm run typecheck` | TypeScript 类型检查 |
-
----
-
-## 📖 使用说明
-
-### 登录管理
-
-1. 正常访问你的导航站，只对外展示公开链接，私有链接彻底隐藏。
-2. **进入管理后台**：在浏览器地址栏输入 `你的域名/admin`。
-3. 页面右下角将“幽灵浮现”一个 🔑 图标，点击并输入 `PASSWORD`。
-4. 验证成功后，自动唤出全功能管理 Dock 栏，并解锁私有数据。
-
-### 功能操作
-
-| 功能 | 操作 |
-|------|------|
-| ➕ 添加链接 | 底部 Dock → 点击「添加」按钮 |
-| 📁 添加分类 | 底部 Dock → 点击「分类」按钮 |
-| 🔀 拖拽排序 | 底部 Dock → 点击「排序」开启，拖拽卡片调整位置 |
-| ⚙️ 设置 | 底部 Dock → 点击「设置」（导入/导出数据、退出登录） |
-| 🌙 切换主题 | 底部 Dock → 点击「主题」切换亮色/暗色 |
-| ✏️ 编辑链接 | 鼠标悬停卡片 → 点击编辑按钮 |
-| 🗑️ 删除链接 | 鼠标悬停卡片 → 点击删除按钮 |
-| 🔍 搜索 | 顶部搜索框，输入关键词实时过滤 |
-
-### 🔥 常用推荐
-
-系统自动统计每个链接的点击量，高频链接会显示在第一个「🔥 常用推荐」虚拟分类中（最多 16 个）。该分类无法编辑或删除，完全由系统自动生成。
-
----
-
-## 📁 项目结构
-
-```
-cf-worker-nav/
-├── src/
-│   ├── index.tsx              # Hono 入口 + 全局中间件
-│   ├── types.ts               # TypeScript 类型 + Zod Schema
-│   ├── db/
-│   │   └── dao.ts             # D1 数据库访问层 (DAO)
-│   ├── middleware/
-│   │   └── auth.ts            # 3 级鉴权 (Root/User/Public) + 速率限制
-│   ├── utils/
-│   │   ├── session.ts         # 会话与安全拦截器 (防 DDoS 嗅探)
-│   │   ├── security.ts        # 时序安全比对 + SHA-256 哈希
-│   │   └── helpers.ts         # 图标 URL、HTML 转义等工具函数
-│   ├── routes/
-│   │   ├── pages.tsx          # SSR 页面路由 (首页/robots.txt/manifest)
-│   │   └── api.ts             # RESTful API (19 个端点)
-│   └── components/            # Hono JSX 组件
-│       ├── Layout.tsx          # HTML 骨架 (CDN 引入 HTMX/SortableJS)
-│       ├── Navbar.tsx          # 分类导航标签栏
-│       ├── SearchBox.tsx       # 搜索框
-│       ├── LinkCard.tsx        # 链接卡片
-│       ├── LinkGrid.tsx        # 卡片网格布局
-│       ├── Dock.tsx            # 底部管理操作栏
-│       └── Modal.tsx           # 弹窗组件
-├── public/
-│   ├── client.js              # 客户端交互逻辑
-│   └── output.css             # Tailwind 编译产物 (构建生成)
-├── styles/
-│   └── app.css                # Tailwind v4 + DaisyUI v5 入口
-├── migrations/
-│   └── 0001_init.sql          # D1 数据库完整 Schema (含子分类与操作日志) + 种子数据
-├── .github/workflows/
-│   └── deploy.yml             # GitHub Actions 自动部署
-├── .env.example               # 环境变量示例 (复制为 .dev.vars 使用)
-├── wrangler.toml              # Cloudflare Worker 配置
-├── tsconfig.json              # TypeScript 配置
-└── package.json               # 依赖 + 构建脚本
-```
-
----
-
-## 🔌 API 端点
-
-### 公开接口
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/health` | 健康检查，返回分类/链接数量 |
-| GET | `/api/config` | 公共配置（标题、背景），5 分钟边缘缓存 |
-| GET | `/api/icon?domain=xxx` | 图标代理（DuckDuckGo），防止隐私域名泄露，7 天缓存 |
-| POST | `/api/visit` | 点击上报（校验 Referer 来源） |
-
-### 需要登录（Authorization: Bearer token）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/auth/verify` | 验证身份，返回角色 (root/user) |
-| GET | `/api/data` | 获取全量数据（含私有分类和链接） |
-| POST | `/api/link` | 添加链接 |
-| POST | `/api/link/update` | 更新链接 |
-| POST | `/api/link/delete` | 删除链接 |
-| POST | `/api/link/reorder` | 批量排序链接 |
-| POST | `/api/category` | 添加分类 |
-| POST | `/api/category/update` | 更新分类 |
-| POST | `/api/category/delete` | 删除分类（需先清空链接） |
-| POST | `/api/category/reorder` | 批量排序分类 |
-
-### 需要 Root 权限
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/config` | 更新站点配置 |
-| POST | `/api/import` | 批量导入数据 |
-| GET | `/api/export` | 导出全部数据 |
-| GET | `/api/token/list` | 列出所有 API Token |
-| POST | `/api/token/create` | 创建新 Token |
-| POST | `/api/token/delete` | 删除 Token |
-
----
-
-## 🔒 安全特性
-
-| 防护 | 实现 |
-|------|------|
-| CSP 安全头 | Hono `secureHeaders()` — 完整 Content-Security-Policy |
-| CSRF 防护 | Hono `csrf()` — 校验 Origin / Sec-Fetch-Site |
-| 时序安全密码验证 | Web Crypto `timingSafeEqual` 防计时攻击 |
-| 暴力破解防护 | 5 次错误锁定 15 分钟，过期记录自动清理 |
-| XSS 防护 | Hono JSX 自动转义 + `safeJsonStringify` |
-| 协议白名单 | D1 CHECK 约束 + Zod 校验，仅允许 http/https |
-| SEO 防爬 | robots.txt + X-Robots-Tag + meta noindex 三重防护 |
-| 零信任 404 | 鉴权失败与违规嗅探强制返回伪装 `404 Not Found`，抗扫描防御 |
-| Token 安全 | SHA-256 加盐哈希存储，数据库不保存明文 |
-| Clickjacking | X-Frame-Options: DENY 禁止 iframe 嵌入 |
-| 请求体限制 | Hono `bodyLimit()` — API 请求体上限 50KB |
-| 防刷量 | `/api/visit` 校验 Referer / Origin 来源 |
-
----
-
-## ❓ 常见问题
-
-**Q: 部署失败显示 "D1_ID_PLACEHOLDER"**
-> 检查是否正确配置了 D1 Database ID。方式一需修改 `wrangler.toml`；方式三需配置 `CLOUDFLARE_D1_ID` Secret（值是数据库 ID，不是数据库名称）。
-
-**Q: 访问显示 "Database D1 is not bound"**
-> D1 绑定失败。确认数据库名称是 `nav-db`，`wrangler.toml` 中的 `database_id` 正确，然后重新部署。
-
-**Q: 访问显示 "no such table: configs"**
-> 数据库尚未初始化。方式一运行 `npx wrangler d1 execute nav-db --remote --file=migrations/0001_init.sql`；方式二在 D1 Console 中手动执行 SQL；方式三手动触发一次 Actions（会自动执行 migration）。
-
-**Q: 登录提示 "Unauthorized"**
-> 密码错误。确认在 Cloudflare Dashboard 的 Worker Settings 中配置了 `PASSWORD` 环境变量（区分大小写）。修改后 Worker 自动重启生效。
-
-**Q: 连续输错密码被锁定了？**
-> 5 次错误后锁定 15 分钟。等待 15 分钟后自动解锁，或在 D1 Console 执行 `DELETE FROM login_attempts;` 手动解锁。
-
-**Q: 如何重置数据库？**
-> 在 Cloudflare Dashboard 删除 D1 数据库，重新创建同名 `nav-db`，执行 migration SQL，然后重新部署。
-
-**Q: 本地开发图标不显示？**
-> 图标通过 DuckDuckGo API 代理获取，国内部分网络环境可能无法访问。部署到 Cloudflare 边缘节点后会自动穿透，均可正常显示。
+**Q: 连续输错密码被锁定了怎么办？**
+> 系统为了防止被暴力破解，连续输错 5 次会封禁您的 IP 15 分钟。您只能等待 15 分钟，或者进入 Cloudflare D1 控制台，执行 `DELETE FROM login_attempts;` 手动解封。
 
 **Q: API Token 怎么生成？为什么前端没有管理按钮？**
 > 本项目已完整内置了极其安全的 API Token 后台逻辑（生成、哈希加盐存储、校验），但遵循极简原则，**目前未提供前端 UI**。
 > - **如何生成**：您可以使用开发者工具或 cURL，在登录状态下（携带 Cookie）向 `POST /api/token/create` 发送 `{"name": "my-token"}` 即可获取。
 > - **纯只读设计**：目前的 Token 仅拥有**只读权限**（系统仅赋予 `isUser = true`），只能用来读取私有书签，无法进行增删改操作。
-> - **如何开启读写权限（供插件使用）**：如果您想开发自动化工具（如一键收藏扩展），只需打开 `src/middleware/auth.ts`，将 Token 校验成功后的逻辑改为 `isRoot = true; isUser = true;`，重新部署后您的 Token 即拥有完整读写权限。
+> - **如何开启读写权限（供插件使用）**：如果您想开发自动化工具（如一键收藏浏览器扩展），只需打开 `src/middleware/auth.ts`，将 Token 校验成功后的逻辑改为 `isRoot = true; isUser = true;`，重新部署后您的 Token 即拥有完整读写权限。
+
+**Q: 本地开发时图标显示为空白？**
+> 为了保护隐私，图标现在通过 DuckDuckGo API 进行边缘代理。国内部分网络环境直接请求可能会超时，但部署到 Cloudflare 边缘节点后会自动穿透屏蔽，均可正常显示。
 
 ---
 
-## 📄 License
+## 👨‍💻 二次开发
 
-MIT
+```bash
+# 拷贝环境配置并填写本地密码
+cp .env.example .dev.vars
+
+# 初始化本地测试数据库
+npx wrangler d1 execute nav-db --local --file=migrations/0001_init.sql
+
+# 启动包含 CSS 实时编译的本地服务器
+npm run dev
+```
+
+## 📄 License
+[MIT License](./LICENSE)
