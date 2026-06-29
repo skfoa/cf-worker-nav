@@ -7,6 +7,7 @@
 - ⚡ **零成本部署** — Cloudflare Workers 免费额度足够个人使用
 - 💾 **D1 数据库** — SQLite 边缘数据库，强一致性，无需额外服务
 - 🔒 **安全加固** — CSP 安全头、CSRF 防护、速率限制、时序安全密码验证
+- 📁 **多级分类** — 支持父子两级嵌套分类（Subcategories），悬浮式响应菜单
 - 🔥 **热门推荐** — 自动统计点击量，智能推荐常用链接（最多 16 个）
 - 🎨 **精美 UI** — 毛玻璃效果、DaisyUI 组件库、响应式设计
 - 🌙 **主题切换** — 亮色 / 暗色主题一键切换，持久化保存
@@ -14,7 +15,7 @@
 - 🔐 **私有模式** — 开启后首页变为登录页，需认证才能查看
 - 📱 **PWA 支持** — 可添加到手机主屏幕，离线可用
 - 🖱️ **拖拽排序** — SortableJS 拖拽排序，实时持久化到 D1
-- ⚡ **边缘缓存** — 配置接口 5 分钟缓存，图标代理 7 天缓存
+- ⚡ **极致性能** — 边缘 CDN 缓存 + 自动化 JS 混淆压缩，毫秒级首屏加载
 - 📦 **数据导入导出** — JSON 格式备份，支持批量导入
 
 ---
@@ -92,6 +93,7 @@ database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # ← 替换为你的 ID
 
 ```bash
 npx wrangler d1 execute nav-db --remote --file=migrations/0001_init.sql
+npx wrangler d1 execute nav-db --remote --file=migrations/0002_subcategories.sql
 ```
 
 #### 5. 构建并部署
@@ -143,7 +145,7 @@ npm run deploy
 
 #### 5. 初始化数据库
 
-在 Dashboard 左侧 **D1** → 点击 `nav-db` → **Console** 标签，将 `migrations/0001_init.sql` 的全部内容粘贴到输入框中执行。
+在 Dashboard 左侧 **D1** → 点击 `nav-db` → **Console** 标签，将 `migrations/0001_init.sql` 和 `migrations/0002_subcategories.sql` 的全部内容依次粘贴到输入框中执行。
 
 #### 6. 添加环境变量
 
@@ -230,6 +232,7 @@ cp .env.example .dev.vars
 
 # 3. 初始化本地 D1 数据库
 npx wrangler d1 execute nav-db --local --file=migrations/0001_init.sql
+npx wrangler d1 execute nav-db --local --file=migrations/0002_subcategories.sql
 
 # 4. 构建 CSS + 启动开发服务器
 npm run dev

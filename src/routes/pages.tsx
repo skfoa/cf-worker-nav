@@ -9,7 +9,6 @@ import { SearchBox } from '../components/SearchBox'
 import { LinkGrid } from '../components/LinkGrid'
 import { Dock } from '../components/Dock'
 import { Modal } from '../components/Modal'
-import { LoginForm } from '../components/LoginForm'
 import { safeJsonStringify, escapeHtml } from '../utils/helpers'
 
 const pages = new Hono<HonoEnv>()
@@ -68,8 +67,8 @@ pages.get('/manifest.json', async (c) => {
   )
 })
 
-// [GET] 首页
-pages.get('/', async (c) => {
+// [GET] 首页及管理员入口
+const renderApp = async (c: any) => {
   const dao = c.get('dao')
   const isUser = c.get('isUser')
   const isRoot = c.get('isRoot')
@@ -79,36 +78,28 @@ pages.get('/', async (c) => {
     const title = config.title || c.env.TITLE || 'My Nav'
     const bgImage = config.bg_image || c.env.BG_IMAGE || ''
 
-    // 🔒 私有模式检查
-    const isPrivateMode = config.private_mode === 'true' || config.private_mode === '1'
-    const hasAuthParam = c.req.query('auth') === '1'
-
-    if (isPrivateMode && !hasAuthParam) {
-      return c.html(<LoginForm title={title} bgImage={bgImage} />)
-    }
-
-    // 私有模式下 SSR 不注入数据，通过 API 拉取
-    const ssrData = isPrivateMode ? [] : (await dao.getAllData(false)).nav
+    // 私有模式下未登录不注入数据，否则拉取全量数据
+    const ssrData = (await dao.getAllData(isUser)).nav
 
     // 构建安全的客户端状态
     const clientState = safeJsonStringify({
       data: ssrData,
       config: { TITLE: title, BG_IMAGE: bgImage },
-      auth: '',
-      isRoot: false,
+      isRoot,
+      isAdmin: isUser,
     })
 
     return c.html(
       <Layout title={title} bgImage={bgImage}>
         <Navbar categories={ssrData} />
         <SearchBox />
-        <LinkGrid categories={ssrData} isAdmin={false} />
+        <LinkGrid categories={ssrData} isAdmin={isUser} />
         <Modal />
-        <Dock isAdmin={false} />
+        <Dock isAdmin={isUser} />
         {/* 客户端状态注入 */}
         <script dangerouslySetInnerHTML={{ __html: `window.__NAV_STATE__=${clientState};` }} />
         {/* 客户端逻辑 */}
-        <script src="/client.js" />
+        <script src="/client.min.js" />
       </Layout>
     )
   } catch (e: unknown) {
@@ -123,6 +114,9 @@ pages.get('/', async (c) => {
       500
     )
   }
-})
+}
+
+pages.get('/', renderApp)
+pages.get('/admin', renderApp)
 
 export { pages }

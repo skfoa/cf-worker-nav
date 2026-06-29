@@ -1,15 +1,16 @@
 /**
- * src/components/Modal.tsx - 通用弹窗组件 (DaisyUI modal)
+ * src/components/Modal.tsx - 通用弹窗组件 (深空玻璃态)
  */
 import type { FC } from 'hono/jsx'
 
 export const Modal: FC = () => (
+<>
   <dialog id="app-modal" class="modal modal-bottom sm:modal-middle">
-    <div class="modal-box bg-base-200 border border-base-content/10">
+    <div class="modal-box nav-modal-box">
       <form method="dialog">
-        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+        <button class="modal-close-btn">✕</button>
       </form>
-      <h3 id="modal-title" class="font-bold text-lg mb-4">弹窗标题</h3>
+      <h3 id="modal-title" class="modal-title">弹窗标题</h3>
       <div id="modal-body">
         {/* 动态内容由 JS 填充 */}
       </div>
@@ -18,6 +19,23 @@ export const Modal: FC = () => (
       <button>close</button>
     </form>
   </dialog>
+  
+  <dialog id="sys-modal" class="modal modal-bottom sm:modal-middle" style="z-index: 9000;">
+    <div class="modal-box nav-modal-box">
+      <h3 id="sys-modal-title" class="font-bold text-lg">提示</h3>
+      <p id="sys-modal-body" class="py-4 text-base-content/80 text-sm whitespace-pre-wrap"></p>
+      <div class="modal-action">
+        <form method="dialog" class="flex gap-2">
+          <button id="sys-modal-cancel" class="btn btn-sm btn-ghost">取消</button>
+          <button id="sys-modal-confirm" class="btn btn-sm btn-primary">确定</button>
+        </form>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </dialog>
+</>
 )
 
 /**

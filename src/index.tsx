@@ -12,7 +12,6 @@ import type { HonoEnv } from './types'
 import { daoMiddleware, authMiddleware } from './middleware/auth'
 import { pages } from './routes/pages'
 import { api } from './routes/api'
-import { LoginForm } from './components/LoginForm'
 
 const app = new Hono<HonoEnv>()
 
@@ -38,11 +37,14 @@ app.use('*', secureHeaders({
 app.use('*', cors({
   origin: (origin, c) => {
     const allowed = c.env.ALLOWED_ORIGIN
-    if (allowed) return origin === allowed ? origin : ''
-    return origin || '*'
+    if (allowed && origin === allowed) return origin
+    // 若未配置跨域白名单，则严格禁止跨域带有 credentials 的请求
+    // 返回空字符串会使 CORS 校验失败，仅允许完全同源的请求
+    return allowed || ''
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
   maxAge: 86400,
 }))
 
@@ -54,17 +56,11 @@ app.use('*', authMiddleware)
 app.route('/', pages)
 app.route('/api', api)
 
-app.notFound(async (c) => {
-  try {
-    const dao = c.get('dao')
-    const config = await dao.getConfigs()
-    const isPrivate = config.private_mode === 'true' || config.private_mode === '1'
-    if (isPrivate) {
-      const title = config.title || c.env.TITLE || 'My Nav'
-      const bgImage = config.bg_image || c.env.BG_IMAGE || ''
-      return c.html(<LoginForm title={title} bgImage={bgImage} />, 200)
-    }
-  } catch { /* fallback */ }
+app.get('/robots.txt', (c) => {
+  return c.text('User-agent: *\nDisallow: /')
+})
+
+app.notFound((c) => {
   return c.text('Not Found', 404)
 })
 

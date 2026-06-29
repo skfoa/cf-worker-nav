@@ -3,6 +3,7 @@
  */
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
+import { setCookie, deleteCookie } from 'hono/cookie'
 import type { HonoEnv } from '../types'
 import {
   LinkCreateSchema, LinkUpdateSchema,
@@ -10,6 +11,8 @@ import {
   ReorderSchema, ConfigUpdateSchema,
 } from '../types'
 import { requireAuth, requireRoot } from '../middleware/auth'
+import { signSession } from '../utils/session'
+import { safeCompare } from '../utils/security'
 
 const api = new Hono<HonoEnv>()
 
@@ -42,8 +45,6 @@ api.get('/config', async (c) => {
     const configData = {
       title: conf.title || c.env.TITLE || 'My Nav',
       bg_image: conf.bg_image || c.env.BG_IMAGE || '',
-      allow_search: conf.allow_search !== 'false',
-      private_mode: conf.private_mode || 'false',
     }
 
     const response = c.json(configData, 200, {
@@ -65,8 +66,6 @@ api.get('/config', async (c) => {
     return c.json({
       title: conf.title || c.env.TITLE || 'My Nav',
       bg_image: conf.bg_image || c.env.BG_IMAGE || '',
-      allow_search: conf.allow_search !== 'false',
-      private_mode: conf.private_mode || 'false',
     }, 200, { 'Cache-Control': 'public, max-age=300, s-maxage=300' })
   }
 })
@@ -112,7 +111,7 @@ api.get('/icon', async (c) => {
       return new Response(cachedResponse.body, { status: cachedResponse.status, headers })
     }
 
-    const iconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`
+    const iconUrl = `https://icons.duckduckgo.com/ip3/${domain}.ico`
     const iconRes = await fetch(iconUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NavIconProxy/1.0)' },
     })
@@ -153,6 +152,60 @@ api.get('/auth/verify', requireAuth, (c) => {
   })
 })
 
+// [POST] 登录下发 Cookie
+api.post('/auth/login', async (c) => {
+  const dao = c.get('dao')
+  const clientIP = c.get('clientIP')
+  const region = (c.req.raw as any)?.cf?.country || 'Local'
+  
+  // 手动防刷接管
+  const rateCheck = await dao.checkRateLimit(clientIP)
+  if (rateCheck.blocked) {
+    const remainingMin = Math.ceil(rateCheck.remainingMs / 60000)
+    return c.json({ error: `Too many failed attempts. Try again in ${remainingMin} minutes.`, blocked: true, remainingMs: rateCheck.remainingMs }, 429)
+  }
+
+  const { password } = await c.req.json().catch(() => ({ password: '' }))
+  if (!password || !c.env.PASSWORD || !c.env.COOKIE_SECRET) {
+    await dao.recordFailedAttempt(clientIP)
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  const isRoot = await safeCompare(password, c.env.PASSWORD)
+  if (!isRoot) {
+    const result = await dao.recordFailedAttempt(clientIP)
+    if (result.locked) {
+      c.executionCtx.waitUntil(
+        dao.addLog({ ip: clientIP, region, level: 'DANGER', action: 'ip_lockout', details: `Failed 5 times. Locked for 15 mins.` })
+      )
+    }
+    return c.json({ error: 'Unauthorized', attemptsRemaining: 5 - result.attempts }, 401)
+  }
+
+  await dao.clearRateLimit(clientIP)
+  const token = await signSession('root', c.env.COOKIE_SECRET + c.env.PASSWORD)
+  
+  setCookie(c, 'nav_token', token, {
+    httpOnly: true,
+    secure: new URL(c.req.url).protocol === 'https:',
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 7 * 24 * 60 * 60
+  })
+
+  c.executionCtx.waitUntil(
+    dao.addLog({ ip: clientIP, region, level: 'INFO', action: 'login', details: 'Admin logged in via UI' })
+  )
+
+  return c.json({ success: true, role: 'root' })
+})
+
+// [POST] 登出销毁 Cookie
+api.post('/auth/logout', (c) => {
+  deleteCookie(c, 'nav_token', { path: '/' })
+  return c.json({ success: true })
+})
+
 // [GET] 全量数据 (后台模式)
 api.get('/data', requireAuth, async (c) => {
   const dao = c.get('dao')
@@ -182,7 +235,15 @@ api.post('/category/delete', requireAuth, async (c) => {
 api.post('/category/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  return c.json(await dao.batchUpdateCategoriesOrder(data))
+  const res = await dao.batchUpdateCategoriesOrder(data)
+  
+  const clientIP = c.get('clientIP')
+  const region = (c.req.raw as any)?.cf?.country || 'Local'
+  c.executionCtx.waitUntil(
+    dao.addLog({ ip: clientIP, region, level: 'INFO', action: 'reorder_categories', details: JSON.stringify({ count: data.length }) })
+  )
+  
+  return c.json(res)
 })
 
 // ── Link CRUD ──
@@ -208,7 +269,15 @@ api.post('/link/delete', requireAuth, async (c) => {
 api.post('/link/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  return c.json(await dao.batchUpdateLinksOrder(data))
+  const res = await dao.batchUpdateLinksOrder(data)
+
+  const clientIP = c.get('clientIP')
+  const region = (c.req.raw as any)?.cf?.country || 'Local'
+  c.executionCtx.waitUntil(
+    dao.addLog({ ip: clientIP, region, level: 'INFO', action: 'reorder_links', details: JSON.stringify({ count: data.length }) })
+  )
+  
+  return c.json(res)
 })
 
 // ==========================================
@@ -231,7 +300,21 @@ api.post('/config', requireAuth, requireRoot, zValidator('json', ConfigUpdateSch
 api.post('/import', requireAuth, requireRoot, async (c) => {
   const dao = c.get('dao')
   const body = await c.req.json()
-  return c.json(await dao.importData(body))
+  const res = await dao.importData(body)
+
+  const clientIP = c.get('clientIP')
+  const region = (c.req.raw as any)?.cf?.country || 'Local'
+  c.executionCtx.waitUntil(
+    dao.addLog({ 
+      ip: clientIP, 
+      region, 
+      level: 'WARN', 
+      action: 'import_data', 
+      details: JSON.stringify({ imported_count: res.count, skipped_count: res.skipped_count }) 
+    })
+  )
+  
+  return c.json(res)
 })
 
 api.get('/export', requireAuth, requireRoot, async (c) => {
@@ -266,6 +349,13 @@ api.post('/token/delete', requireAuth, requireRoot, async (c) => {
   const dao = c.get('dao')
   const body = await c.req.json() as { id: number }
   return c.json(await dao.deleteToken(body.id))
+})
+
+api.get('/logs', requireAuth, requireRoot, async (c) => {
+  const dao = c.get('dao')
+  const page = parseInt(c.req.query('page') || '1') || 1
+  const limit = parseInt(c.req.query('limit') || '20') || 20
+  return c.json(await dao.getLogs(page, limit))
 })
 
 export { api }

@@ -4,10 +4,12 @@
  */
 import { hashWithSalt } from '../utils/security'
 import type { Category, Link, CategoryWithItems, SiteConfig } from '../types'
+import { SafeUrlSchema } from '../types'
 
 export class DAO {
   private db: D1Database
   private salt: string
+  private logLevel: string
 
   // 速率限制配置
   static RATE_LIMIT = {
@@ -18,9 +20,10 @@ export class DAO {
     CLEANUP_PROBABILITY: 0.05,
   } as const
 
-  constructor(db: D1Database, env: { TOKEN_SALT?: string }) {
+  constructor(db: D1Database, env: { TOKEN_SALT?: string; LOG_LEVEL?: string }) {
     this.db = db
     this.salt = env.TOKEN_SALT || 'nav_default_salt_CHANGE_IN_PRODUCTION'
+    this.logLevel = (env.LOG_LEVEL || 'INFO').toUpperCase()
     if (!env.TOKEN_SALT) {
       console.warn('[DAO] ⚠️ TOKEN_SALT is not configured! Using default salt.')
     }
@@ -57,31 +60,46 @@ export class DAO {
       SELECT * FROM links
       WHERE visits > 0 AND COALESCE(is_private, 0) = 0
       ORDER BY visits DESC
-      LIMIT 16
+      LIMIT 24
     `
 
     const [catsData, linksData, hotData] = await Promise.all([
       this.db.prepare(catSql).all<Category>(),
       this.db.prepare(linksSql).all<Link>(),
-      this.db.prepare(hotSql).all<Link>(),
+      isLogin ? this.db.prepare(hotSql).all<Link>() : Promise.resolve({ results: [] as Link[] }),
     ])
 
     const categories = catsData.results || []
     const links = linksData.results || []
     const hotLinks = hotData.results || []
 
-    const nav: CategoryWithItems[] = categories.map(cat => ({
+    // 为每个分类分配链接
+    const allCatsWithItems: CategoryWithItems[] = categories.map(cat => ({
       ...cat,
       items: links.filter(l => l.category_id === cat.id),
+      children: [],
     }))
 
-    // 🔥 热门推荐虚拟分类
-    if (hotLinks.length > 0) {
+    // 树形组装：子分类挂到父分类下
+    const catMap = new Map<number, CategoryWithItems>()
+    allCatsWithItems.forEach(c => catMap.set(c.id, c))
+
+    const nav: CategoryWithItems[] = []
+    for (const cat of allCatsWithItems) {
+      if (cat.parent_id && catMap.has(cat.parent_id)) {
+        catMap.get(cat.parent_id)!.children!.push(cat)
+      } else {
+        nav.push(cat)
+      }
+    }
+
+    // 🔥 热门推荐虚拟分类（仅登录用户可见）
+    if (isLogin && hotLinks.length > 0) {
       nav.unshift({
         id: -1,
         title: '🔥 常用推荐',
         items: hotLinks,
-        is_private: 0,
+        is_private: 1,
         sort_order: -999,
         created_at: 0,
         updated_at: 0,
@@ -143,25 +161,29 @@ export class DAO {
   // 分类管理
   // ===========================================
 
-  async addCategory(data: { title: string; is_private?: number }): Promise<D1Result> {
+  async addCategory(data: { title: string; is_private?: number; parent_id?: number }): Promise<D1Result> {
     const privateVal = data.is_private ? 1 : 0
+    const parentId = data.parent_id || null
     return await this.db
       .prepare(
-        `INSERT INTO categories (title, sort_order, is_private, created_at, updated_at)
-         VALUES (?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories), ?, ?, ?)`
+        `INSERT INTO categories (title, sort_order, is_private, parent_id, created_at, updated_at)
+         VALUES (?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories), ?, ?, ?, ?)`
       )
-      .bind(data.title, privateVal, this.now(), this.now())
+      .bind(data.title, privateVal, parentId, this.now(), this.now())
       .run()
   }
 
-  async updateCategory(data: { id: number; title?: string; is_private?: number }): Promise<D1Result> {
-    if (data.title === undefined && data.is_private === undefined) {
+  async updateCategory(data: { id: number; title?: string; is_private?: number; parent_id?: number | null }): Promise<D1Result> {
+    const fields = ['title', 'is_private', 'parent_id'] as const
+    const hasUpdate = fields.some(f => data[f] !== undefined)
+    if (!hasUpdate) {
       return { success: true, meta: { changes: 0 } } as unknown as D1Result
     }
     let sql = 'UPDATE categories SET updated_at = ?'
     const args: unknown[] = [this.now()]
     if (data.title !== undefined) { sql += ', title = ?'; args.push(data.title) }
     if (data.is_private !== undefined) { sql += ', is_private = ?'; args.push(Number(data.is_private)) }
+    if (data.parent_id !== undefined) { sql += ', parent_id = ?'; args.push(data.parent_id) }
     sql += ' WHERE id = ?'
     args.push(data.id)
     return await this.db.prepare(sql).bind(...args).run()
@@ -331,7 +353,8 @@ export class DAO {
       if (catId && Array.isArray(group.items)) {
         for (const item of group.items) {
           const url = item.url || ''
-          if (!/^https?:\/\//i.test(url)) {
+          const urlParse = SafeUrlSchema.safeParse(url)
+          if (!urlParse.success) {
             skippedCount++
             skippedUrls.push(url || '(empty)')
             continue
@@ -471,5 +494,45 @@ export class DAO {
     if (Math.random() < DAO.RATE_LIMIT.CLEANUP_PROBABILITY) {
       await this.cleanupExpiredLocks()
     }
+  }
+
+  // ===========================================
+  // 操作日志
+  // ===========================================
+
+  async addLog(log: { ip: string; region?: string; level: 'INFO' | 'WARN' | 'DANGER'; action: string; details?: string }): Promise<void> {
+    // 动态日志熔断：根据 LOG_LEVEL 丢弃低级别日志
+    if (this.logLevel === 'WARN' && log.level === 'INFO') return
+    if (this.logLevel === 'DANGER' && (log.level === 'INFO' || log.level === 'WARN')) return
+
+    try {
+      await this.db
+        .prepare('INSERT INTO operation_logs (created_at, ip, region, level, action, details) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(this.now(), log.ip, log.region || '', log.level, log.action, log.details || '')
+        .run()
+        
+      // 概率清理（维持约 500 条）
+      if (Math.random() < 0.1) {
+        await this.db
+          .prepare('DELETE FROM operation_logs WHERE id IN (SELECT id FROM operation_logs ORDER BY created_at DESC LIMIT -1 OFFSET 500)')
+          .run()
+      }
+    } catch (e: unknown) {
+      console.error('[Logs] Failed to write log:', e instanceof Error ? e.message : e)
+    }
+  }
+
+  async getLogs(page = 1, limit = 20): Promise<{ logs: any[]; total: number }> {
+    const offset = (page - 1) * limit
+    const [data, totalRes] = await Promise.all([
+      this.db
+        .prepare('SELECT * FROM operation_logs ORDER BY created_at DESC LIMIT ? OFFSET ?')
+        .bind(limit, offset)
+        .all(),
+      this.db
+        .prepare('SELECT COUNT(*) as count FROM operation_logs')
+        .first<{ count: number }>()
+    ])
+    return { logs: data.results || [], total: totalRes?.count || 0 }
   }
 }

@@ -4,22 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build:css && wrangler dev",
+    "dev": "npm run build:css && npm run build:js && wrangler dev",
     "build:css": "npx @tailwindcss/cli -i styles/app.css -o public/output.css --minify",
-    "deploy": "npm run build:css && wrangler deploy",
+    "build:js": "npx terser public/client.js -c -m -o public/client.min.js",
+    "deploy": "npm run build:css && npm run build:js && wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "^4.7.0",
     "@hono/zod-validator": "^0.5.0",
+    "hono": "^4.7.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "wrangler": "^3.99.0",
-    "typescript": "^5.7.0",
     "@cloudflare/workers-types": "^4.20250214.0",
-    "tailwindcss": "^4.1.0",
     "@tailwindcss/cli": "^4.1.0",
-    "daisyui": "^5.0.0"
+    "daisyui": "^5.0.0",
+    "tailwindcss": "^4.1.0",
+    "terser": "^5.48.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.105.0"
   }
 }

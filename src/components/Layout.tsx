@@ -21,12 +21,8 @@ export const Layout: FC<LayoutProps> = ({ title, bgImage, children, nonce }) => 
       <link rel="manifest" href="/manifest.json" />
       <meta name="theme-color" content="#1a1a1a" />
       <link rel="stylesheet" href="/output.css" />
-      {/* HTMX */}
-      <script src="https://unpkg.com/htmx.org@2.0.4" nonce={nonce} />
-      {/* SortableJS */}
-      <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js" nonce={nonce} />
     </head>
-    <body class="min-h-screen tap-none bg-base-300 text-base-content pb-28">
+    <body class={`min-h-screen tap-none text-base-content pb-28 ${bgImage ? 'bg-transparent' : 'bg-base-300'}`}>
       {/* 背景图 */}
       {bgImage && (
         <div
@@ -38,7 +34,7 @@ export const Layout: FC<LayoutProps> = ({ title, bgImage, children, nonce }) => 
       <div class="bg-overlay bg-overlay-dark" />
       {children}
       {/* Toast 容器 */}
-      <div id="toast-container" class="toast toast-end toast-bottom z-[100]" />
+      <div id="toast-container" class="toast toast-end toast-top z-[9999]" />
     </body>
   </html>
 )
