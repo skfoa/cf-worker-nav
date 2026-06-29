@@ -10,6 +10,10 @@
 
 它不仅拥有现代化的毛玻璃 UI 设计，更在底层融入了**“零信任” (Zero-Trust) 安全理念**，是为您量身打造的下一代纯净无界导航引擎。
 
+<div align="center">
+  <img src="./public/screenshot.png" alt="首页截图" width="100%" />
+</div>
+
 ---
 
 ## ✨ 核心特性 (Features)
