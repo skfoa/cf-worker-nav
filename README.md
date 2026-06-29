@@ -415,9 +415,6 @@ cf-worker-nav/
 > - **纯只读设计**：目前的 Token 仅拥有**只读权限**（系统仅赋予 `isUser = true`），只能用来读取私有书签，无法进行增删改操作。
 > - **如何开启读写权限（供插件使用）**：如果您想开发自动化工具（如一键收藏扩展），只需打开 `src/middleware/auth.ts`，将 Token 校验成功后的逻辑改为 `isRoot = true; isUser = true;`，重新部署后您的 Token 即拥有完整读写权限。
 
-**Q: 如何从旧版本升级？**
-> 旧版使用 `index.js` + `db.js` + `ui.js` 单体架构。升级时保留 D1 数据库数据不变，替换代码后重新部署即可，数据库 Schema 完全兼容。
-
 ---
 
 ## 📄 License
