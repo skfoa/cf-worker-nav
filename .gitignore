@@ -6,7 +6,6 @@ worker.js
 
 # Node 依赖
 node_modules/
-package-lock.json
 
 # 系统文件
 .DS_Store
