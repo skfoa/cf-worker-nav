@@ -12,6 +12,8 @@
 
 <div align="center">
   <img src="./public/screenshot.png" alt="首页截图" width="100%" />
+  <img width="1853" height="915" alt="image" src="https://github.com/user-attachments/assets/3aae9fbc-b383-4fbf-8717-91513233e81a" />
+
 </div>
 
 ---
