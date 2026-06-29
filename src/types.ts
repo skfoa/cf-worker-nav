@@ -111,6 +111,9 @@ export const CategoryUpdateSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   is_private: z.union([z.literal(0), z.literal(1)]).optional(),
   parent_id: z.number().int().positive().nullable().optional(),
+}).refine(data => data.id !== data.parent_id, {
+  message: "父分类不能是自己",
+  path: ["parent_id"]
 })
 
 export const ReorderSchema = z.array(z.object({
