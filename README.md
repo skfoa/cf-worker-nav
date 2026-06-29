@@ -93,7 +93,6 @@ database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # ← 替换为你的 ID
 
 ```bash
 npx wrangler d1 execute nav-db --remote --file=migrations/0001_init.sql
-npx wrangler d1 execute nav-db --remote --file=migrations/0002_subcategories.sql
 ```
 
 #### 5. 构建并部署
@@ -145,7 +144,7 @@ npm run deploy
 
 #### 5. 初始化数据库
 
-在 Dashboard 左侧 **D1** → 点击 `nav-db` → **Console** 标签，将 `migrations/0001_init.sql` 和 `migrations/0002_subcategories.sql` 的全部内容依次粘贴到输入框中执行。
+在 Dashboard 左侧 **D1** → 点击 `nav-db` → **Console** 标签，将 `migrations/0001_init.sql` 的全部内容粘贴到输入框中执行。
 
 #### 6. 添加环境变量
 
@@ -232,7 +231,6 @@ cp .env.example .dev.vars
 
 # 3. 初始化本地 D1 数据库
 npx wrangler d1 execute nav-db --local --file=migrations/0001_init.sql
-npx wrangler d1 execute nav-db --local --file=migrations/0002_subcategories.sql
 
 # 4. 构建 CSS + 启动开发服务器
 npm run dev
@@ -297,6 +295,7 @@ cf-worker-nav/
 │   ├── middleware/
 │   │   └── auth.ts            # 3 级鉴权 (Root/User/Public) + 速率限制
 │   ├── utils/
+│   │   ├── session.ts         # 会话与安全拦截器 (防 DDoS 嗅探)
 │   │   ├── security.ts        # 时序安全比对 + SHA-256 哈希
 │   │   └── helpers.ts         # 图标 URL、HTML 转义等工具函数
 │   ├── routes/
@@ -309,15 +308,14 @@ cf-worker-nav/
 │       ├── LinkCard.tsx        # 链接卡片
 │       ├── LinkGrid.tsx        # 卡片网格布局
 │       ├── Dock.tsx            # 底部管理操作栏
-│       ├── Modal.tsx           # 弹窗组件
-│       └── LoginForm.tsx       # 登录页面
+│       └── Modal.tsx           # 弹窗组件
 ├── public/
 │   ├── client.js              # 客户端交互逻辑
 │   └── output.css             # Tailwind 编译产物 (构建生成)
 ├── styles/
 │   └── app.css                # Tailwind v4 + DaisyUI v5 入口
 ├── migrations/
-│   └── 0001_init.sql          # D1 数据库 Schema + 种子数据
+│   └── 0001_init.sql          # D1 数据库完整 Schema (含子分类与操作日志) + 种子数据
 ├── .github/workflows/
 │   └── deploy.yml             # GitHub Actions 自动部署
 ├── .env.example               # 环境变量示例 (复制为 .dev.vars 使用)

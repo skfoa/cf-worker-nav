@@ -12,6 +12,7 @@ CREATE TABLE categories (
     title TEXT NOT NULL CHECK(length(title) > 0),
     sort_order INTEGER NOT NULL DEFAULT 0,
     is_private INTEGER NOT NULL DEFAULT 0 CHECK(is_private IN (0, 1)),
+    parent_id INTEGER DEFAULT NULL REFERENCES categories(id) ON DELETE CASCADE,
     created_at INTEGER DEFAULT (unixepoch() * 1000),
     updated_at INTEGER DEFAULT (unixepoch() * 1000)
 );
@@ -69,6 +70,7 @@ CREATE TABLE tokens (
 CREATE INDEX IF NOT EXISTS idx_links_cat ON links(category_id);
 CREATE INDEX IF NOT EXISTS idx_links_sort ON links(sort_order);
 CREATE INDEX IF NOT EXISTS idx_cat_sort ON categories(sort_order);
+CREATE INDEX IF NOT EXISTS idx_cat_parent ON categories(parent_id);
 CREATE INDEX IF NOT EXISTS idx_links_private ON links(is_private);
 CREATE INDEX IF NOT EXISTS idx_cat_private ON categories(is_private);
 -- 🔥 点击量索引：优化常用推荐查询性能
@@ -114,6 +116,22 @@ CREATE TABLE login_attempts (
 CREATE INDEX IF NOT EXISTS idx_attempts_locked ON login_attempts(locked_until);
 
 -- ==========================================
+-- 8. Operation Logs (操作日志表)
+-- ==========================================
+DROP TABLE IF EXISTS operation_logs;
+CREATE TABLE operation_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    ip TEXT NOT NULL,
+    region TEXT,
+    level TEXT NOT NULL,
+    action TEXT NOT NULL,
+    details TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_logs_created ON operation_logs(created_at);
+
+-- ==========================================
 -- 8. Seed Data (初始数据)
 -- ==========================================
 -- 注意："常用推荐" 现在是动态生成的虚拟分类，不再创建静态分类
@@ -129,5 +147,4 @@ FROM categories WHERE title='工具站';
 
 INSERT OR IGNORE INTO configs (key, value, description) VALUES 
 ('title', 'My Navigation', '网站标题'),
-('bg_image', '', '背景图片 URL'),
-('allow_search', 'true', '是否显示搜索框 (true/false)');
+('bg_image', '', '背景图片 URL');
