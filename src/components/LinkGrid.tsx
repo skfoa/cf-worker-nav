@@ -56,7 +56,7 @@ export const LinkGrid: FC<LinkGridProps> = ({ categories, isAdmin }) => (
     <section id="search-results" class="hidden">
       <div
         id="search-results-grid"
-        class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"
+        class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3"
       />
       <div id="search-empty" class="text-center text-base-content/30 py-16 text-sm hidden">
         未找到匹配的链接
