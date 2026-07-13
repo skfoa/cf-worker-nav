@@ -1018,22 +1018,26 @@
           return '<span class="inline-block px-2.5 py-1 rounded text-xs font-medium bg-base-content/20 text-base-content">' + escapeHtml(action) + '</span>';
         }
 
+        html += '<div class="overflow-x-auto"><table class="w-full text-left border-collapse whitespace-nowrap">';
+        html += '<thead><tr class="border-b border-base-content/10">' +
+          '<th class="py-3 px-3 font-semibold text-xs">时间 (UTC+8)</th>' +
+          '<th class="py-3 px-3 font-semibold text-xs">IP</th>' +
+          '<th class="py-3 px-3 font-semibold text-xs">地区</th>' +
+          '<th class="py-3 px-3 font-semibold text-xs text-center">操作</th>' +
+          '</tr></thead><tbody>';
+
         res.logs.forEach(function (log) {
           const d = new Date(log.created_at);
           const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
 
-          html += '<div class="rounded-xl p-3" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05)">' +
-            '<div class="flex items-center justify-between gap-2 mb-1.5">' +
-              '<span class="text-sm text-base-content/80">' + dateStr + '</span>' +
-              getActionBadge(log.action) +
-            '</div>' +
-            '<div class="flex items-center gap-3 text-xs text-base-content/50">' +
-              '<span class="font-mono">' + escapeHtml(log.ip || 'Unknown') + '</span>' +
-              '<span>·</span>' +
-              '<span>' + escapeHtml(log.region || 'Unknown') + '</span>' +
-            '</div>' +
-          '</div>';
+          html += '<tr class="border-b border-base-content/5 hover:bg-base-content/[0.02] transition-colors">' +
+            '<td class="py-3 px-3 text-xs text-base-content/80">' + dateStr + '</td>' +
+            '<td class="py-3 px-3 text-xs font-mono text-base-content/60">' + escapeHtml(log.ip || 'Unknown') + '</td>' +
+            '<td class="py-3 px-3 text-xs text-base-content/80">' + escapeHtml(log.region || 'Unknown') + '</td>' +
+            '<td class="py-3 px-3 text-center">' + getActionBadge(log.action) + '</td>' +
+            '</tr>';
         });
+        html += '</tbody></table></div>';
       }
 
       // 底部操作区
@@ -1065,9 +1069,9 @@
 
       openModal('📋 操作日志', html);
 
-      // 扩大 modal 宽度
+      // 扩大 modal 宽度以容纳表格
       var modalBox = document.querySelector('#app-modal .modal-box');
-      if (modalBox) modalBox.style.maxWidth = '36rem';
+      if (modalBox) modalBox.style.maxWidth = '48rem';
 
       // 翻页事件
       document.querySelectorAll('.btn-logs-nav').forEach(function (btn) {
