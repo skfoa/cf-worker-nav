@@ -539,4 +539,11 @@ export class DAO {
     ])
     return { logs: data.results || [], total: totalRes?.count || 0 }
   }
+
+  async clearLogs(): Promise<{ deleted: number }> {
+    const result = await this.db
+      .prepare('DELETE FROM operation_logs')
+      .run()
+    return { deleted: result.meta.changes || 0 }
+  }
 }

@@ -990,16 +990,14 @@
   }
 
   // ── 审计日志 ──
-  async function showLogsModal(page = 1) {
+  async function showLogsModal(page = 1, limit = 5) {
     try {
-      const res = await api('/api/logs?page=' + page + '&limit=15');
-      let html = '<div class="flex flex-col gap-2">';
+      const res = await api('/api/logs?page=' + page + '&limit=' + limit);
+      let html = '<div class="flex flex-col gap-3">';
+
       if (!res.logs || res.logs.length === 0) {
         html += '<div class="py-20 text-center text-base-content/40">暂无操作日志记录</div>';
       } else {
-        html += '<div class="overflow-x-auto"><table class="w-full text-left border-collapse whitespace-nowrap">';
-        html += '<thead><tr class="border-b border-base-content/10"><th class="py-4 px-3 font-semibold text-sm">时间 (UTC+8)</th><th class="py-4 px-3 font-semibold text-sm">IP</th><th class="py-4 px-3 font-semibold text-sm">地区</th><th class="py-4 px-3 font-semibold text-sm text-center">操作</th></tr></thead><tbody>';
-        
         function getActionBadge(action) {
           const map = {
             'login': { text: '登录后台', cls: 'bg-primary text-primary-content' },
@@ -1009,53 +1007,95 @@
             'update_link': { text: '修改链接', cls: 'bg-blue-500 text-white' },
             'delete_category': { text: '删除分类', cls: 'bg-rose-500 text-white' },
             'delete_link': { text: '删除链接', cls: 'bg-rose-500 text-white' },
-            'reorder_categories': { text: '保存配置', cls: 'bg-purple-500 text-white' },
-            'reorder_links': { text: '保存配置', cls: 'bg-purple-500 text-white' },
-            'import_links': { text: '获取订阅', cls: 'bg-emerald-500 text-white' } // Using '获取订阅' style for import
+            'reorder_categories': { text: '排序分类', cls: 'bg-purple-500 text-white' },
+            'reorder_links': { text: '排序链接', cls: 'bg-purple-500 text-white' },
+            'import_data': { text: '导入数据', cls: 'bg-emerald-500 text-white' },
+            'clear_logs': { text: '清空日志', cls: 'bg-rose-500 text-white' },
+            'ip_lockout': { text: 'IP 锁定', cls: 'bg-rose-500 text-white' },
           };
           const match = map[action];
-          if (match) {
-            return '<span class="inline-block px-2.5 py-1 rounded text-xs font-medium ' + match.cls + '">' + match.text + '</span>';
-          }
+          if (match) return '<span class="inline-block px-2.5 py-1 rounded text-xs font-medium ' + match.cls + '">' + match.text + '</span>';
           return '<span class="inline-block px-2.5 py-1 rounded text-xs font-medium bg-base-content/20 text-base-content">' + escapeHtml(action) + '</span>';
         }
 
-        res.logs.forEach(log => {
-          // Format date as YYYY-MM-DD HH:mm:ss
+        res.logs.forEach(function (log) {
           const d = new Date(log.created_at);
           const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
-          
-          html += '<tr class="border-b border-base-content/5 hover:bg-base-content/[0.02] transition-colors">' +
-                  '<td class="py-4 px-3 text-sm text-base-content/80">' + dateStr + '</td>' +
-                  '<td class="py-4 px-3 text-xs font-mono text-base-content/60">' + escapeHtml(log.ip || 'Unknown') + '</td>' +
-                  '<td class="py-4 px-3 text-sm text-base-content/80">' + escapeHtml(log.region || 'Unknown') + '</td>' +
-                  '<td class="py-4 px-3 text-center">' + getActionBadge(log.action) + '</td>' +
-                  '</tr>';
+
+          html += '<div class="rounded-xl p-3" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05)">' +
+            '<div class="flex items-center justify-between gap-2 mb-1.5">' +
+              '<span class="text-sm text-base-content/80">' + dateStr + '</span>' +
+              getActionBadge(log.action) +
+            '</div>' +
+            '<div class="flex items-center gap-3 text-xs text-base-content/50">' +
+              '<span class="font-mono">' + escapeHtml(log.ip || 'Unknown') + '</span>' +
+              '<span>·</span>' +
+              '<span>' + escapeHtml(log.region || 'Unknown') + '</span>' +
+            '</div>' +
+          '</div>';
         });
-        html += '</tbody></table></div>';
       }
-      
-      // Footer section matching screenshot
-      html += '<div class="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-base-content/10">';
-      html += '<p class="text-xs text-base-content/40 text-center sm:text-left">因为D1空间有限，所以只保留核心的操作日志，当日志超出限制会自动清理最老的记录。</p>';
-      
-      html += '<div class="flex gap-2 shrink-0">';
+
+      // 底部操作区
+      html += '<div class="flex flex-col gap-3 pt-3 border-t border-base-content/10">';
+
+      // 翻页按钮行
+      html += '<div class="flex items-center justify-between">';
+      html += '<span class="text-xs text-base-content/30">共 ' + (res.total || 0) + ' 条日志</span>';
+      html += '<div class="flex gap-2">';
       if (page > 1) {
-        html += '<button class="btn btn-primary btn-sm btn-logs-page shadow-md shadow-primary/20" data-page="' + (page - 1) + '">上一页</button>';
+        html += '<button class="btn btn-outline btn-xs btn-logs-nav" data-page="' + (page - 1) + '" data-limit="' + limit + '">上一页</button>';
       }
-      if (res.logs && res.logs.length === 15) {
-        html += '<button class="btn btn-primary btn-sm btn-logs-page shadow-md shadow-primary/20" data-page="' + (page + 1) + '">下一页</button>';
+      if (res.logs && res.logs.length === limit && (page * limit) < (res.total || 0)) {
+        html += '<button class="btn btn-outline btn-xs btn-logs-nav" data-page="' + (page + 1) + '" data-limit="' + limit + '">下一页</button>';
       }
-      if (page === 1 && (!res.logs || res.logs.length < 15)) {
-        html += '<button class="btn btn-primary btn-sm shadow-md shadow-primary/20" onclick="document.getElementById(\'app-modal\').close()">全部日志</button>';
-      }
-      html += '</div></div></div>';
+      html += '</div></div>';
 
-      openModal('📋 查看操作日志', html);
+      // 操作按钮行
+      html += '<div class="flex gap-2">';
+      if (limit <= 5) {
+        html += '<button class="btn btn-primary btn-sm flex-1" id="btn-logs-all">📋 查看全部日志</button>';
+      } else {
+        html += '<button class="btn btn-outline btn-sm flex-1" id="btn-logs-brief">📋 简略视图</button>';
+      }
+      html += '<button class="btn btn-error btn-outline btn-sm" id="btn-logs-clear">🗑️ 清空</button>';
+      html += '</div>';
 
-      document.querySelectorAll('.btn-logs-page').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          showLogsModal(parseInt(e.target.dataset.page));
+      html += '</div></div>';
+
+      openModal('📋 操作日志', html);
+
+      // 扩大 modal 宽度
+      var modalBox = document.querySelector('#app-modal .modal-box');
+      if (modalBox) modalBox.style.maxWidth = '36rem';
+
+      // 翻页事件
+      document.querySelectorAll('.btn-logs-nav').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          showLogsModal(parseInt(e.target.dataset.page), parseInt(e.target.dataset.limit));
+        });
+      });
+
+      // 查看全部日志
+      $('#btn-logs-all')?.addEventListener('click', function () {
+        showLogsModal(1, 15);
+      });
+
+      // 简略视图
+      $('#btn-logs-brief')?.addEventListener('click', function () {
+        showLogsModal(1, 5);
+      });
+
+      // 清空日志
+      $('#btn-logs-clear')?.addEventListener('click', function () {
+        sysConfirm('确定要清空所有操作日志吗？此操作不可恢复！', async function () {
+          try {
+            await api('/api/logs/clear', { method: 'POST' });
+            toast('日志已清空', 'success');
+            showLogsModal(1, limit);
+          } catch (err) {
+            toast('清空失败: ' + err.message, 'error');
+          }
         });
       });
     } catch (err) {

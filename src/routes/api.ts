@@ -358,4 +358,17 @@ api.get('/logs', requireAuth, requireRoot, async (c) => {
   return c.json(await dao.getLogs(page, limit))
 })
 
+api.post('/logs/clear', requireAuth, requireRoot, async (c) => {
+  const dao = c.get('dao')
+  const result = await dao.clearLogs()
+
+  const clientIP = c.get('clientIP')
+  const region = (c.req.raw as any)?.cf?.country || 'Local'
+  c.executionCtx.waitUntil(
+    dao.addLog({ ip: clientIP, region, level: 'WARN', action: 'clear_logs', details: `Cleared ${result.deleted} logs` })
+  )
+
+  return c.json({ success: true, ...result })
+})
+
 export { api }
