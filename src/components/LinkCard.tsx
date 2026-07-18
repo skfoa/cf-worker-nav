@@ -51,7 +51,7 @@ export const LinkCard: FC<LinkCardProps> = ({ link, isAdmin }) => {
           <img
             src={iconSrc}
             alt=""
-            class="max-w-[2.5rem] max-h-[2.5rem] w-auto h-auto object-contain"
+            class="w-10 h-10 object-contain"
             loading="lazy"
             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
           />

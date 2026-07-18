@@ -236,7 +236,7 @@
       'data-link-id="' + link.id + '" data-cat-id="' + link.category_id + '" data-title="' + escapeHtml(link.title) + '" data-url="' + escapeHtml(link.url) + '">' +
       adminBtns +
       '<div class="w-14 h-14 flex items-center justify-center flex-shrink-0">' +
-      '<img src="' + escapeHtml(iconSrc) + '" alt="" class="max-w-[2.5rem] max-h-[2.5rem] w-auto h-auto object-contain" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+      '<img src="' + escapeHtml(iconSrc) + '" alt="" class="w-10 h-10 object-contain" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
       '<span class="text-3xl" style="display:none">🔗</span></div>' +
       '<div class="text-xs font-medium text-center text-base-content/80 truncate w-full leading-tight">' +
       (link.is_private ? '🔒 ' : '') + escapeHtml(link.title) + '</div>' +
