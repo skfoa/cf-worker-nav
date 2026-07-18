@@ -236,8 +236,7 @@
       'data-link-id="' + link.id + '" data-cat-id="' + link.category_id + '" data-title="' + escapeHtml(link.title) + '" data-url="' + escapeHtml(link.url) + '">' +
       adminBtns +
       '<div class="w-14 h-14 flex items-center justify-center flex-shrink-0">' +
-      '<img src="' + escapeHtml(iconSrc) + '" alt="" class="w-10 h-10 object-contain" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
-      '<span class="text-3xl" style="display:none">🔗</span></div>' +
+      '<img src="' + escapeHtml(iconSrc) + '" alt="" class="w-10 h-10 object-contain" loading="lazy" onerror="var l=(\'' + escapeHtml(link.title) + '\').charAt(0).toUpperCase()||\'?\';var h=(l.charCodeAt(0)*37)%360;this.onerror=null;this.src=\'data:image/svg+xml,\'+encodeURIComponent(\'<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 64 64&quot;><rect width=&quot;64&quot; height=&quot;64&quot; rx=&quot;14&quot; fill=&quot;hsl(\'+h+\',60%,50%)&quot;/><text x=&quot;32&quot; y=&quot;32&quot; font-family=&quot;system-ui,sans-serif&quot; font-size=&quot;30&quot; font-weight=&quot;600&quot; fill=&quot;white&quot; text-anchor=&quot;middle&quot; dominant-baseline=&quot;central&quot;>\'+l+\'</text></svg>\')"></div>' +
       '<div class="text-xs font-medium text-center text-base-content/80 truncate w-full leading-tight">' +
       (link.is_private ? '🔒 ' : '') + escapeHtml(link.title) + '</div>' +
       '</a>';

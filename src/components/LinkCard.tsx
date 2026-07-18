@@ -47,21 +47,13 @@ export const LinkCard: FC<LinkCardProps> = ({ link, isAdmin }) => {
 
       {/* 图标 — 无背景块，直接悬浮 */}
       <div class="w-14 h-14 flex items-center justify-center flex-shrink-0">
-        {iconSrc ? (
-          <img
-            src={iconSrc}
-            alt=""
-            class="w-10 h-10 object-contain"
-            loading="lazy"
-            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
-          />
-        ) : null}
-        <span
-          class="text-3xl"
-          style={iconSrc ? 'display:none' : ''}
-        >
-          🔗
-        </span>
+        <img
+          src={iconSrc || `/api/icon?domain=${encodeURIComponent(new URL(link.url).hostname)}`}
+          alt=""
+          class="w-10 h-10 object-contain"
+          loading="lazy"
+          onerror={`var l='${link.title.charAt(0).toUpperCase()||'?'}';var h=(l.charCodeAt(0)*37)%360;this.onerror=null;this.src='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="hsl('+h+',60%,50%)"/><text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">'+l+'</text></svg>')`}
+        />
       </div>
 
       {/* 标题 */}

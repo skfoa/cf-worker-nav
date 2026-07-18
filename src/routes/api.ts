@@ -92,7 +92,7 @@ api.post('/visit', async (c) => {
   }
 })
 
-// [GET] 图标代理 (边缘缓存 7 天)
+// [GET] 图标代理 (三级降级：DuckDuckGo → 直接 favicon → 首字母生成)
 api.get('/icon', async (c) => {
   const domain = c.req.query('domain')
   if (!domain) return c.text('Missing domain parameter', 400)
@@ -100,10 +100,12 @@ api.get('/icon', async (c) => {
     return c.text('Invalid domain format', 400)
   }
 
-  const cacheKey = new Request(`https://icon-cache.internal/icon/${domain.toLowerCase()}`, { method: 'GET' })
+  const domainLower = domain.toLowerCase()
+  const cacheKey = new Request(`https://icon-cache.internal/icon/${domainLower}`, { method: 'GET' })
   const cache = caches.default
 
   try {
+    // 1. 检查边缘缓存
     const cachedResponse = await cache.match(cacheKey)
     if (cachedResponse) {
       const headers = new Headers(cachedResponse.headers)
@@ -111,15 +113,61 @@ api.get('/icon', async (c) => {
       return new Response(cachedResponse.body, { status: cachedResponse.status, headers })
     }
 
-    const iconUrl = `https://icons.duckduckgo.com/ip3/${domain}.ico`
-    const iconRes = await fetch(iconUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NavIconProxy/1.0)' },
-    })
-    if (!iconRes.ok) return c.text('Icon not found', 404)
+    const ua = 'Mozilla/5.0 (compatible; NavIconProxy/1.0)'
+    let iconBody: ArrayBuffer | null = null
+    let contentType = 'image/png'
 
-    const iconBody = await iconRes.arrayBuffer()
-    const contentType = iconRes.headers.get('Content-Type') || 'image/png'
+    // 2. 第一优先：DuckDuckGo 图标服务
+    try {
+      const ddgRes = await fetch(`https://icons.duckduckgo.com/ip3/${domainLower}.ico`, {
+        headers: { 'User-Agent': ua },
+      })
+      if (ddgRes.ok) {
+        const body = await ddgRes.arrayBuffer()
+        // DuckDuckGo 对未知域名会返回一个极小的空白占位图（通常 < 200 字节）
+        if (body.byteLength > 100) {
+          iconBody = body
+          contentType = ddgRes.headers.get('Content-Type') || 'image/x-icon'
+        }
+      }
+    } catch { /* DuckDuckGo 不可达，继续降级 */ }
 
+    // 3. 第二优先：直接访问网站 /favicon.ico
+    if (!iconBody) {
+      try {
+        const directRes = await fetch(`https://${domainLower}/favicon.ico`, {
+          headers: { 'User-Agent': ua },
+          redirect: 'follow',
+        })
+        if (directRes.ok) {
+          const ct = directRes.headers.get('Content-Type') || ''
+          // 确保返回的确实是图片而非 HTML 错误页
+          if (ct.includes('image') || ct.includes('icon')) {
+            iconBody = await directRes.arrayBuffer()
+            contentType = ct
+          }
+        }
+      } catch { /* 网站不可达，继续降级 */ }
+    }
+
+    // 4. 第三优先：生成首字母 SVG 图标
+    if (!iconBody) {
+      const letter = domainLower.replace(/^www\./, '').charAt(0).toUpperCase()
+      // 根据首字母生成稳定的色相（同一字母永远是同一颜色）
+      const hue = (letter.charCodeAt(0) * 37) % 360
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:hsl(${hue},65%,55%)"/>
+          <stop offset="100%" style="stop-color:hsl(${(hue + 30) % 360},55%,45%)"/>
+        </linearGradient></defs>
+        <rect width="64" height="64" rx="14" fill="url(#g)"/>
+        <text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">${letter}</text>
+      </svg>`
+      iconBody = new TextEncoder().encode(svg).buffer as ArrayBuffer
+      contentType = 'image/svg+xml'
+    }
+
+    // 5. 返回并缓存
     const responseHeaders = {
       'Content-Type': contentType,
       'Cache-Control': 'public, max-age=604800, s-maxage=604800',
@@ -135,7 +183,11 @@ api.get('/icon', async (c) => {
 
     return response
   } catch {
-    return c.text('Icon fetch failed', 500)
+    // 终极兜底：即使出现意外异常，也返回首字母 SVG
+    const letter = domainLower.replace(/^www\./, '').charAt(0).toUpperCase()
+    const hue = (letter.charCodeAt(0) * 37) % 360
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="hsl(${hue},60%,50%)"/><text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">${letter}</text></svg>`
+    return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' } })
   }
 })
 
