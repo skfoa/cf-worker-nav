@@ -25,7 +25,8 @@ jobs:
 
       - name: Inject D1 Database ID
         run: |
-          sed -i "s|D1_ID_PLACEHOLDER|${{ secrets.CLOUDFLARE_D1_ID }}|g" wrangler.toml
+          cp wrangler.toml.example wrangler.toml
+          sed -i "s|YOUR_D1_DATABASE_ID_HERE|${{ secrets.CLOUDFLARE_D1_ID }}|g" wrangler.toml
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3

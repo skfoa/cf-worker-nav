@@ -224,6 +224,15 @@ export class DAO {
     category_id: number; title: string; url: string
     icon?: string; description?: string; is_private?: number
   }): Promise<D1Result> {
+    // 同分类下 URL 去重检查
+    const existing = await this.db
+      .prepare('SELECT id FROM links WHERE category_id = ? AND url = ?')
+      .bind(data.category_id, data.url)
+      .first<{ id: number }>()
+    if (existing) {
+      throw new Error('该分类下已存在相同 URL 的链接')
+    }
+
     const privateVal = data.is_private ? 1 : 0
     return await this.db
       .prepare(

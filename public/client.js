@@ -417,29 +417,44 @@
         doSearch();
       }
     });
+    var searchTimer = null;
     searchInput.addEventListener('input', function () {
-      const q = this.value.trim().toLowerCase();
+      var self = this;
+      var q = self.value.trim().toLowerCase();
       searchClear?.classList.toggle('hidden', !q);
       if (currentEngine !== 'local' && q) return;
       if (!q) {
-        $$('.cat-section').forEach((s, i) => s.classList.toggle('hidden', i !== currentCatIdx));
+        clearTimeout(searchTimer);
+        $$('.cat-section').forEach(function (s, i) { s.classList.toggle('hidden', i !== currentCatIdx); });
         $('#search-results')?.classList.add('hidden');
         return;
       }
-      $$('.cat-section').forEach(s => s.classList.add('hidden'));
-      const results = $('#search-results');
-      const grid = $('#search-results-grid');
-      const empty = $('#search-empty');
-      if (!results || !grid) return;
-      results.classList.remove('hidden');
-      const allLinks = getAllLinks();
-      const matched = allLinks.filter(l =>
-        (l.title || '').toLowerCase().includes(q) ||
-        (l.url || '').toLowerCase().includes(q) ||
-        (l.description || '').toLowerCase().includes(q)
-      );
-      grid.innerHTML = matched.map(l => linkCardHtml(l)).join('');
-      empty?.classList.toggle('hidden', matched.length > 0);
+      // 200ms 防抖
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(function () {
+        $$('.cat-section').forEach(function (s) { s.classList.add('hidden'); });
+        var results = $('#search-results');
+        var grid = $('#search-results-grid');
+        var empty = $('#search-empty');
+        if (!results || !grid) return;
+        results.classList.remove('hidden');
+        var allLinks = getAllLinks();
+        // 带权重的搜索：标题匹配权重最高，描述次之，URL 最低
+        var scored = [];
+        allLinks.forEach(function (l) {
+          var title = (l.title || '').toLowerCase();
+          var desc = (l.description || '').toLowerCase();
+          var url = (l.url || '').toLowerCase();
+          var score = 0;
+          if (title.includes(q)) score += 100;
+          if (desc.includes(q)) score += 10;
+          if (url.includes(q)) score += 1;
+          if (score > 0) scored.push({ link: l, score: score });
+        });
+        scored.sort(function (a, b) { return b.score - a.score; });
+        grid.innerHTML = scored.map(function (s) { return linkCardHtml(s.link); }).join('');
+        empty?.classList.toggle('hidden', scored.length > 0);
+      }, 200);
     });
   }
   if (searchClear) {

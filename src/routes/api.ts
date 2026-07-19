@@ -191,6 +191,15 @@ api.get('/icon', async (c) => {
   }
 })
 
+// [POST] 图标缓存清除 (管理员手动刷新坏图标)
+api.post('/icon/purge', requireAuth, requireRoot, async (c) => {
+  const { domain } = await c.req.json().catch(() => ({ domain: '' })) as { domain: string }
+  if (!domain) return c.json({ error: 'Missing domain' }, 400)
+  const cacheKey = new Request(`https://icon-cache.internal/icon/${domain.toLowerCase()}`, { method: 'GET' })
+  const deleted = await caches.default.delete(cacheKey)
+  return c.json({ success: true, domain, cacheCleared: deleted })
+})
+
 // ==========================================
 // 需要鉴权的接口
 // ==========================================

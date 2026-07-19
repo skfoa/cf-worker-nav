@@ -16,6 +16,6 @@ Thumbs.db
 .env
 .env.local
 
-# 如果你采用了“本地修改 wrangler.toml 填写真实ID”的开发方式，
-# 为了防止误传真实ID到 GitHub，你可以取消下面这行的注释：
-# wrangler.toml
+# wrangler 配置 (含私有 database_id，不提交到仓库)
+# 首次使用请复制 wrangler.toml.example 为 wrangler.toml 并填入你的 D1 ID
+wrangler.toml

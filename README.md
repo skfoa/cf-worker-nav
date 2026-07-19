@@ -108,8 +108,10 @@ npm install
 # 2. 登录您的 Cloudflare 账号
 npx wrangler login
 
-# 3. 修改配置文件
-# 打开项目中的 wrangler.toml，将 database_id 替换为您真实获取到的 ID。
+# 3. 创建本地配置文件
+# 复制模板并填写您真实的 D1 Database ID
+cp wrangler.toml.example wrangler.toml
+# 打开 wrangler.toml，将 YOUR_D1_DATABASE_ID_HERE 替换为您真实获取到的 ID。
 
 # 4. 初始化远程云端数据库表结构
 npx wrangler d1 execute nav-db --remote --file=migrations/0001_init.sql
