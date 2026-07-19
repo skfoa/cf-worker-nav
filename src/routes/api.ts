@@ -132,7 +132,24 @@ api.get('/icon', async (c) => {
       }
     } catch { /* DuckDuckGo 不可达，继续降级 */ }
 
-    // 3. 第二优先：直接访问网站 /favicon.ico
+    // 3. 第二优先：favicon.im 图标服务
+    if (!iconBody) {
+      try {
+        const fimRes = await fetch(`https://a.favicon.im/${domainLower}`, {
+          headers: { 'User-Agent': ua },
+          redirect: 'follow',
+        })
+        if (fimRes.ok) {
+          const body = await fimRes.arrayBuffer()
+          if (body.byteLength > 100) {
+            iconBody = body
+            contentType = fimRes.headers.get('Content-Type') || 'image/png'
+          }
+        }
+      } catch { /* favicon.im 不可达，继续降级 */ }
+    }
+
+    // 4. 第三优先：直接访问网站 /favicon.ico
     if (!iconBody) {
       try {
         const directRes = await fetch(`https://${domainLower}/favicon.ico`, {
@@ -150,7 +167,7 @@ api.get('/icon', async (c) => {
       } catch { /* 网站不可达，继续降级 */ }
     }
 
-    // 4. 第三优先：生成首字母 SVG 图标
+    // 5. 第四优先：生成首字母 SVG 图标
     if (!iconBody) {
       const letter = domainLower.replace(/^www\./, '').charAt(0).toUpperCase()
       // 根据首字母生成稳定的色相（同一字母永远是同一颜色）
@@ -167,7 +184,7 @@ api.get('/icon', async (c) => {
       contentType = 'image/svg+xml'
     }
 
-    // 5. 返回并缓存
+    // 6. 返回并缓存
     const responseHeaders = {
       'Content-Type': contentType,
       'Cache-Control': 'public, max-age=604800, s-maxage=604800',
