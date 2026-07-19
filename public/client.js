@@ -932,12 +932,15 @@
         options += '<option value="' + ch.id + '" ' + (ch.id === link.category_id ? 'selected' : '') + '>└ ' + escapeHtml(ch.title) + '</option>';
       });
     });
+    var linkDomain = '';
+    try { linkDomain = new URL(link.url).hostname; } catch (e) {}
     openModal('编辑链接', '<form id="edit-form" class="flex flex-col gap-3"><input type="hidden" name="id" value="' + link.id + '">' +
       '<label class="form-control w-full"><div class="label"><span class="label-text">分类</span></div><select name="category_id" class="select select-bordered w-full" required>' + options + '</select></label>' +
       '<label class="form-control w-full"><div class="label"><span class="label-text">标题</span></div><input type="text" name="title" class="input input-bordered w-full" required value="' + escapeHtml(link.title) + '"></label>' +
       '<label class="form-control w-full"><div class="label"><span class="label-text">URL</span></div><input type="url" name="url" class="input input-bordered w-full" required value="' + escapeHtml(link.url) + '"></label>' +
       '<label class="form-control w-full"><div class="label"><span class="label-text">描述</span></div><input type="text" name="description" class="input input-bordered w-full" value="' + escapeHtml(link.description || '') + '"></label>' +
       '<label class="form-control w-full"><div class="label"><span class="label-text">图标 URL</span></div><input type="text" name="icon" class="input input-bordered w-full" value="' + escapeHtml(link.icon || '') + '"></label>' +
+      (linkDomain ? '<button type="button" id="btn-purge-icon" class="btn btn-outline btn-xs self-start" data-domain="' + escapeHtml(linkDomain) + '">🔄 刷新图标缓存</button>' : '') +
       '<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" name="is_private" class="toggle toggle-sm" ' + (link.is_private ? 'checked' : '') + '><span class="label-text">🔒 私有链接</span></label>' +
       '<div class="modal-action"><button type="submit" class="btn btn-primary">保存修改</button></div></form>');
     $('#edit-form')?.addEventListener('submit', async function (e) {
@@ -957,6 +960,21 @@
         toast('链接已更新', 'success');
         await reloadData();
       } catch (err) { toast('更新失败: ' + err.message, 'error'); }
+    });
+    // 图标缓存刷新按钮
+    $('#btn-purge-icon')?.addEventListener('click', async function () {
+      var domain = this.dataset.domain;
+      this.disabled = true;
+      this.textContent = '⏳ 刷新中...';
+      try {
+        await api('/api/icon/purge', { method: 'POST', body: JSON.stringify({ domain: domain }) });
+        toast('图标缓存已清除，刷新页面后生效', 'success');
+        this.textContent = '✅ 已刷新';
+      } catch (err) {
+        toast('刷新失败: ' + err.message, 'error');
+        this.disabled = false;
+        this.textContent = '🔄 刷新图标缓存';
+      }
     });
   }
 
