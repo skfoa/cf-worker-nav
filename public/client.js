@@ -1195,17 +1195,31 @@
       $('#bg-preview').innerHTML = '<span class="text-xs text-base-content/30">暂无背景</span>';
     });
 
-    // 导出
+    // 导出数据
     $('#btn-export')?.addEventListener('click', async function () {
+      const btn = this;
+      btn.disabled = true;
+      btn.textContent = '⏳ 导出中...';
       try {
         const data = await api('/api/export');
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const jsonStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'nav-export.json';
+        const dateStr = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = 'nav-backup-' + dateStr + '.json';
+        document.body.appendChild(a);
         a.click();
-        toast('导出成功', 'success');
-      } catch (err) { toast('导出失败', 'error'); }
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast('数据全量备份导出成功', 'success');
+      } catch (err) {
+        toast('导出失败: ' + (err.message || '网络错误'), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '📤 导出';
+      }
     });
 
     // 导入
@@ -1218,12 +1232,19 @@
         if (!file) return;
         try {
           const text = await file.text();
-          const json = JSON.parse(text);
-          const importData = json.data || json;
-          const res = await api('/api/import', { method: 'POST', body: JSON.stringify(importData) });
-          toast('导入成功：' + (res.count || 0) + ' 条链接', 'success');
+          let json;
+          try {
+            json = JSON.parse(text);
+          } catch (e) {
+            throw new Error('JSON 文件格式无效');
+          }
+          const res = await api('/api/import', { method: 'POST', body: JSON.stringify(json) });
+          let msg = '导入完成：新增 ' + (res.count || 0) + ' 条链接';
+          if (res.categories_added > 0) msg += '，创建 ' + res.categories_added + ' 个新分类';
+          toast(msg, 'success');
           if (res.skipped_urls && res.skipped_urls.length > 0) {
-            sysAlert('注意：以下链接因协议不安全(非 http/https)被跳过导入:\\n\\n' + res.skipped_urls.join('\\n'));
+            const listStr = res.skipped_urls.slice(0, 10).join('\n') + (res.skipped_urls.length > 10 ? '\n...等共 ' + res.skipped_urls.length + ' 条' : '');
+            sysAlert('提示：有 ' + res.skipped_count + ' 条数据被跳过（可能因为 URL 无效或已存在）：\n\n' + listStr);
           }
           await reloadData();
         } catch (err) { toast('导入失败: ' + err.message, 'error'); }

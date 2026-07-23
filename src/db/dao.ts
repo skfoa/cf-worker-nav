@@ -324,37 +324,60 @@ export class DAO {
   // 批量导入
   // ===========================================
 
-  async importData(data: Array<{
-    category?: string; title?: string; is_private?: number
-    items?: Array<{ name?: string; title?: string; url: string; description?: string; icon?: string; is_private?: number }>
-  }>): Promise<{ success: boolean; count: number; categories_added: number; skipped_count: number; skipped_urls: string[] }> {
-    if (!Array.isArray(data)) throw new Error('Invalid format: Root must be an array')
+  async importData(inputData: any): Promise<{ success: boolean; count: number; categories_added: number; skipped_count: number; skipped_urls: string[] }> {
+    const data: Array<{
+      category?: string; title?: string; parent_category?: string; is_private?: number
+      items?: Array<{ name?: string; title?: string; url: string; description?: string; icon?: string; is_private?: number }>
+    }> = Array.isArray(inputData) ? inputData : (inputData && Array.isArray(inputData.data) ? inputData.data : null)
+
+    if (!Array.isArray(data)) throw new Error('Invalid format: Root or "data" field must be an array')
 
     const n = this.now()
-    let existingCats = await this.db.prepare('SELECT id, title FROM categories').all<{ id: number; title: string }>()
+    let existingCats = await this.db.prepare('SELECT id, title, parent_id, is_private FROM categories').all<Category>()
     const catMap = new Map<string, number>()
     ;(existingCats.results || []).forEach(c => catMap.set(c.title, c.id))
 
-    const newCatStmts: D1PreparedStatement[] = []
-    const newCatNames = new Set<string>()
+    let categoriesAdded = 0
 
+    // 1. 确保所有分类存在（包括主分类与子分类）
     for (const group of data) {
       const catTitle = group.category || group.title
-      if (catTitle && !catMap.has(catTitle) && !newCatNames.has(catTitle)) {
-        newCatStmts.push(
-          this.db
-            .prepare('INSERT INTO categories (title, is_private, created_at, updated_at) VALUES (?, 0, ?, ?)')
-            .bind(catTitle, n, n)
-        )
-        newCatNames.add(catTitle)
+      if (catTitle && !catMap.has(catTitle)) {
+        const isPriv = group.is_private ? 1 : 0
+        const res = await this.db
+          .prepare('INSERT INTO categories (title, is_private, created_at, updated_at) VALUES (?, ?, ?, ?)')
+          .bind(catTitle, isPriv, n, n)
+          .run()
+        if (res.meta.last_row_id) {
+          catMap.set(catTitle, res.meta.last_row_id)
+          categoriesAdded++
+        }
       }
     }
 
-    if (newCatStmts.length > 0) {
-      await this.db.batch(newCatStmts)
-      existingCats = await this.db.prepare('SELECT id, title FROM categories').all<{ id: number; title: string }>()
-      ;(existingCats.results || []).forEach(c => catMap.set(c.title, c.id))
+    // 2. 绑定子分类与父分类的关系
+    for (const group of data) {
+      const catTitle = group.category || group.title
+      if (catTitle && group.parent_category && catMap.has(group.parent_category)) {
+        const catId = catMap.get(catTitle)!
+        const parentId = catMap.get(group.parent_category)!
+        if (catId !== parentId) {
+          await this.db
+            .prepare('UPDATE categories SET parent_id = ?, updated_at = ? WHERE id = ?')
+            .bind(parentId, n, catId)
+            .run()
+        }
+      }
     }
+
+    // 刷新分类映射
+    existingCats = await this.db.prepare('SELECT id, title FROM categories').all<Category>()
+    ;(existingCats.results || []).forEach(c => catMap.set(c.title, c.id))
+
+    // 3. 查重防重复插入
+    const existingLinks = await this.db.prepare('SELECT category_id, url FROM links').all<{ category_id: number; url: string }>()
+    const existingLinkSet = new Set<string>()
+    ;(existingLinks.results || []).forEach(l => existingLinkSet.add(`${l.category_id}|${l.url}`))
 
     const linkStmts: D1PreparedStatement[] = []
     let skippedCount = 0
@@ -369,16 +392,27 @@ export class DAO {
           const urlParse = SafeUrlSchema.safeParse(url)
           if (!urlParse.success) {
             skippedCount++
-            skippedUrls.push(url || '(empty)')
+            skippedUrls.push(`${url || '(empty)'} (格式不合规)`)
             continue
           }
+
+          const dupKey = `${catId}|${url}`
+          if (existingLinkSet.has(dupKey)) {
+            skippedCount++
+            skippedUrls.push(`${url} (已存在)`)
+            continue
+          }
+          existingLinkSet.add(dupKey)
+
+          const itemTitle = item.name || item.title || ''
+          const isPriv = item.is_private ? 1 : 0
           linkStmts.push(
             this.db
               .prepare(
                 `INSERT INTO links (category_id, title, url, description, icon, is_private, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
               )
-              .bind(catId, item.name || item.title || '', url, item.description || '', item.icon || '', n, n)
+              .bind(catId, itemTitle, url, item.description || '', item.icon || '', isPriv, n, n)
           )
         }
       }
@@ -394,9 +428,9 @@ export class DAO {
     return {
       success: true,
       count: linkStmts.length,
-      categories_added: newCatStmts.length,
+      categories_added: categoriesAdded,
       skipped_count: skippedCount,
-      skipped_urls: skippedUrls.slice(0, 10),
+      skipped_urls: skippedUrls,
     }
   }
 

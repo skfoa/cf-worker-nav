@@ -410,17 +410,66 @@ api.post('/import', requireAuth, requireRoot, async (c) => {
 api.get('/export', requireAuth, requireRoot, async (c) => {
   const dao = c.get('dao')
   const allData = await dao.getAllData(true)
-  const exportData = allData.nav.map(cat => ({
-    category: cat.title,
-    is_private: cat.is_private,
-    items: cat.items.map(link => ({
-      title: link.title,
-      url: link.url,
-      description: link.description,
-      icon: link.icon,
-      is_private: link.is_private,
-    })),
-  }))
+  const exportData: Array<{
+    category: string
+    parent_category?: string
+    is_private?: number
+    items: Array<{
+      title: string
+      url: string
+      description?: string
+      icon?: string
+      is_private?: number
+    }>
+  }> = []
+
+  for (const cat of allData.nav) {
+    if (cat.id === -1) continue // 跳过虚拟“常用推荐”
+
+    exportData.push({
+      category: cat.title,
+      is_private: cat.is_private || 0,
+      items: (cat.items || []).map(link => ({
+        title: link.title,
+        url: link.url,
+        description: link.description || '',
+        icon: link.icon || '',
+        is_private: link.is_private || 0,
+      })),
+    })
+
+    if (cat.children && cat.children.length > 0) {
+      for (const child of cat.children) {
+        exportData.push({
+          category: child.title,
+          parent_category: cat.title,
+          is_private: child.is_private || 0,
+          items: (child.items || []).map(link => ({
+            title: link.title,
+            url: link.url,
+            description: link.description || '',
+            icon: link.icon || '',
+            is_private: link.is_private || 0,
+          })),
+        })
+      }
+    }
+  }
+
+  const clientIP = c.get('clientIP')
+  const region = (c.req.raw as any)?.cf?.country || 'Local'
+  c.executionCtx.waitUntil(
+    dao.addLog({
+      ip: clientIP,
+      region,
+      level: 'INFO',
+      action: 'export_data',
+      details: JSON.stringify({ category_count: exportData.length })
+    })
+  )
+
+  const dateStr = new Date().toISOString().slice(0, 10)
+  c.header('Content-Disposition', `attachment; filename="nav-backup-${dateStr}.json"`)
   return c.json({ meta: { version: 1, date: new Date().toISOString() }, data: exportData })
 })
 
