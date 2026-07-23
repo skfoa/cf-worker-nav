@@ -132,7 +132,7 @@ api.get('/icon', async (c) => {
       }
     } catch { /* DuckDuckGo 不可达，继续降级 */ }
 
-    // 3. 第二优先：favicon.im 图标服务
+    // 3. 第二优先：favicon.im 图标服务（检测其默认占位图避免缓存 "f" 品牌图标）
     if (!iconBody) {
       try {
         const fimRes = await fetch(`https://a.favicon.im/${domainLower}`, {
@@ -141,30 +141,42 @@ api.get('/icon', async (c) => {
         })
         if (fimRes.ok) {
           const body = await fimRes.arrayBuffer()
-          if (body.byteLength > 100) {
+          const ct = fimRes.headers.get('Content-Type') || ''
+          const finalUrl = fimRes.url || ''
+          // favicon.im 找不到真实图标时会返回默认占位图（通常重定向到其默认图片或返回 SVG 占位）
+          const isDefault = finalUrl.includes('favicon.im/default') || finalUrl.includes('favicon.im/icons/default')
+            || (ct.includes('svg') && body.byteLength < 1000)
+          if (body.byteLength > 100 && !isDefault) {
             iconBody = body
-            contentType = fimRes.headers.get('Content-Type') || 'image/png'
+            contentType = ct || 'image/png'
           }
         }
       } catch { /* favicon.im 不可达，继续降级 */ }
     }
 
-    // 4. 第三优先：直接访问网站 /favicon.ico
+    // 4. 第三优先：直接访问网站常见图标路径
     if (!iconBody) {
-      try {
-        const directRes = await fetch(`https://${domainLower}/favicon.ico`, {
-          headers: { 'User-Agent': ua },
-          redirect: 'follow',
-        })
-        if (directRes.ok) {
-          const ct = directRes.headers.get('Content-Type') || ''
-          // 确保返回的确实是图片而非 HTML 错误页
-          if (ct.includes('image') || ct.includes('icon')) {
-            iconBody = await directRes.arrayBuffer()
-            contentType = ct
+      const paths = ['/favicon.ico', '/favicon.svg', '/favicon.png', '/apple-touch-icon.png']
+      for (const path of paths) {
+        if (iconBody) break
+        try {
+          const directRes = await fetch(`https://${domainLower}${path}`, {
+            headers: { 'User-Agent': ua },
+            redirect: 'follow',
+          })
+          if (directRes.ok) {
+            const ct = directRes.headers.get('Content-Type') || ''
+            // 确保返回的确实是图片而非 HTML 错误页
+            if (ct.includes('image') || ct.includes('icon') || ct.includes('svg')) {
+              const body = await directRes.arrayBuffer()
+              if (body.byteLength > 100) {
+                iconBody = body
+                contentType = ct
+              }
+            }
           }
-        }
-      } catch { /* 网站不可达，继续降级 */ }
+        } catch { /* 继续尝试下一个路径 */ }
+      }
     }
 
     // 5. 第四优先：生成首字母 SVG 图标
