@@ -92,7 +92,7 @@ api.post('/visit', async (c) => {
   }
 })
 
-// [GET] 图标代理 (三级降级：DuckDuckGo → 直接 favicon → 首字母生成)
+// [GET] 图标代理 (五级降级：DuckDuckGo → favicon.im → HTML解析 → 常见路径 → 首字母生成)
 api.get('/icon', async (c) => {
   const domain = c.req.query('domain')
   if (!domain) return c.text('Missing domain parameter', 400)
@@ -104,6 +104,25 @@ api.get('/icon', async (c) => {
   const cacheKey = new Request(`https://icon-cache.internal/icon/${domainLower}`, { method: 'GET' })
   const cache = caches.default
 
+  // 带超时的 fetch 封装（默认 5 秒）
+  async function fetchWithTimeout(url: string, opts: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      return await fetch(url, { ...opts, signal: controller.signal })
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  // 安全地下载图片 body（限制最大 512KB，防止巨图耗尽内存）
+  async function safeReadBody(res: Response, maxBytes = 512 * 1024): Promise<ArrayBuffer | null> {
+    const len = res.headers.get('Content-Length')
+    if (len && parseInt(len) > maxBytes) return null
+    const body = await res.arrayBuffer()
+    return body.byteLength > 100 && body.byteLength <= maxBytes ? body : null
+  }
+
   try {
     // 1. 检查边缘缓存
     const cachedResponse = await cache.match(cacheKey)
@@ -113,19 +132,19 @@ api.get('/icon', async (c) => {
       return new Response(cachedResponse.body, { status: cachedResponse.status, headers })
     }
 
-    const ua = 'Mozilla/5.0 (compatible; NavIconProxy/1.0)'
+    const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     let iconBody: ArrayBuffer | null = null
     let contentType = 'image/png'
+    let isGenerated = false // 标记是否为生成的首字母图标
 
     // 2. 第一优先：DuckDuckGo 图标服务
     try {
-      const ddgRes = await fetch(`https://icons.duckduckgo.com/ip3/${domainLower}.ico`, {
+      const ddgRes = await fetchWithTimeout(`https://icons.duckduckgo.com/ip3/${domainLower}.ico`, {
         headers: { 'User-Agent': ua },
       })
       if (ddgRes.ok) {
-        const body = await ddgRes.arrayBuffer()
-        // DuckDuckGo 对未知域名会返回一个极小的空白占位图（通常 < 200 字节）
-        if (body.byteLength > 100) {
+        const body = await safeReadBody(ddgRes)
+        if (body) {
           iconBody = body
           contentType = ddgRes.headers.get('Content-Type') || 'image/x-icon'
         }
@@ -135,41 +154,163 @@ api.get('/icon', async (c) => {
     // 3. 第二优先：favicon.im 图标服务（检测其默认占位图避免缓存 "f" 品牌图标）
     if (!iconBody) {
       try {
-        const fimRes = await fetch(`https://a.favicon.im/${domainLower}`, {
+        const fimRes = await fetchWithTimeout(`https://a.favicon.im/${domainLower}`, {
           headers: { 'User-Agent': ua },
           redirect: 'follow',
         })
         if (fimRes.ok) {
-          const body = await fimRes.arrayBuffer()
           const ct = fimRes.headers.get('Content-Type') || ''
           const finalUrl = fimRes.url || ''
-          // favicon.im 找不到真实图标时会返回默认占位图（通常重定向到其默认图片或返回 SVG 占位）
           const isDefault = finalUrl.includes('favicon.im/default') || finalUrl.includes('favicon.im/icons/default')
-            || (ct.includes('svg') && body.byteLength < 1000)
-          if (body.byteLength > 100 && !isDefault) {
-            iconBody = body
-            contentType = ct || 'image/png'
+            || (ct.includes('svg') && (await fimRes.clone().text()).length < 1000)
+          if (!isDefault) {
+            const body = await safeReadBody(fimRes)
+            if (body) {
+              iconBody = body
+              contentType = ct || 'image/png'
+            }
           }
         }
       } catch { /* favicon.im 不可达，继续降级 */ }
     }
 
-    // 4. 第三优先：直接访问网站常见图标路径
+    // 4. 第三优先：解析网站 HTML <head> 中的 <link rel="icon"> 声明
+    if (!iconBody) {
+      try {
+        const htmlRes = await fetchWithTimeout(`https://${domainLower}/`, {
+          headers: {
+            'User-Agent': ua,
+            'Accept': 'text/html',
+          },
+          redirect: 'follow',
+        }, 6000)
+        if (htmlRes.ok) {
+          const ct = htmlRes.headers.get('Content-Type') || ''
+          if (ct.includes('text/html')) {
+            // 只读取前 32KB 来解析 <head>，避免下载整个页面
+            const reader = htmlRes.body?.getReader()
+            let htmlChunk = ''
+            if (reader) {
+              const decoder = new TextDecoder()
+              let bytesRead = 0
+              while (bytesRead < 32768) {
+                const { done, value } = await reader.read()
+                if (done) break
+                htmlChunk += decoder.decode(value, { stream: true })
+                bytesRead += value.byteLength
+                // 如果已经读到 </head> 就可以停止了
+                if (htmlChunk.includes('</head>') || htmlChunk.includes('</HEAD>')) break
+              }
+              reader.cancel().catch(() => {})
+            }
+
+            // 解析所有 <link> 标签中的图标声明
+            const iconUrls: string[] = []
+            const linkRegex = /<link\s[^>]*rel\s*=\s*["'](?:icon|shortcut icon|apple-touch-icon|apple-touch-icon-precomposed)["'][^>]*>/gi
+            let match: RegExpExecArray | null
+            while ((match = linkRegex.exec(htmlChunk)) !== null) {
+              const hrefMatch = match[0].match(/href\s*=\s*["']([^"']+)["']/)
+              if (hrefMatch?.[1]) iconUrls.push(hrefMatch[1])
+            }
+            // 也检查 href 在 rel 前面的情况
+            const linkRegex2 = /<link\s[^>]*href\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["'](?:icon|shortcut icon|apple-touch-icon|apple-touch-icon-precomposed)["'][^>]*>/gi
+            while ((match = linkRegex2.exec(htmlChunk)) !== null) {
+              if (match[1] && !iconUrls.includes(match[1])) iconUrls.push(match[1])
+            }
+
+            // 解析 manifest 链接
+            const manifestMatch = htmlChunk.match(/<link\s[^>]*rel\s*=\s*["']manifest["'][^>]*href\s*=\s*["']([^"']+)["']/i)
+              || htmlChunk.match(/<link\s[^>]*href\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["']manifest["']/i)
+
+            // 尝试从解析到的图标 URL 中获取图标
+            for (const rawUrl of iconUrls) {
+              if (iconBody) break
+              try {
+                // 解析相对 URL 为绝对 URL
+                const iconUrl = rawUrl.startsWith('http')
+                  ? rawUrl
+                  : rawUrl.startsWith('//')
+                    ? `https:${rawUrl}`
+                    : `https://${domainLower}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`
+
+                const iconRes = await fetchWithTimeout(iconUrl, {
+                  headers: { 'User-Agent': ua },
+                  redirect: 'follow',
+                }, 4000)
+                if (iconRes.ok) {
+                  const ict = iconRes.headers.get('Content-Type') || ''
+                  if (ict.includes('image') || ict.includes('icon') || ict.includes('svg') || ict.includes('octet-stream')) {
+                    const body = await safeReadBody(iconRes)
+                    if (body) {
+                      iconBody = body
+                      contentType = ict.includes('octet-stream') ? 'image/png' : ict
+                    }
+                  }
+                }
+              } catch { /* 继续下一个 URL */ }
+            }
+
+            // 如果 HTML 中有 manifest 链接，尝试解析 manifest.json 获取图标
+            if (!iconBody && manifestMatch?.[1]) {
+              try {
+                const manifestUrl = manifestMatch[1].startsWith('http')
+                  ? manifestMatch[1]
+                  : manifestMatch[1].startsWith('//')
+                    ? `https:${manifestMatch[1]}`
+                    : `https://${domainLower}${manifestMatch[1].startsWith('/') ? '' : '/'}${manifestMatch[1]}`
+                const mRes = await fetchWithTimeout(manifestUrl, { headers: { 'User-Agent': ua } }, 3000)
+                if (mRes.ok) {
+                  const manifest = await mRes.json() as { icons?: Array<{ src: string; sizes?: string; type?: string }> }
+                  if (manifest.icons && manifest.icons.length > 0) {
+                    // 优先选尺寸最大的图标
+                    const sorted = [...manifest.icons].sort((a, b) => {
+                      const sizeA = parseInt(a.sizes?.split('x')[0] || '0')
+                      const sizeB = parseInt(b.sizes?.split('x')[0] || '0')
+                      return sizeB - sizeA
+                    })
+                    for (const icon of sorted) {
+                      if (iconBody) break
+                      try {
+                        const src = icon.src.startsWith('http')
+                          ? icon.src
+                          : icon.src.startsWith('//')
+                            ? `https:${icon.src}`
+                            : `https://${domainLower}${icon.src.startsWith('/') ? '' : '/'}${icon.src}`
+                        const iRes = await fetchWithTimeout(src, { headers: { 'User-Agent': ua }, redirect: 'follow' }, 4000)
+                        if (iRes.ok) {
+                          const body = await safeReadBody(iRes)
+                          if (body) {
+                            iconBody = body
+                            contentType = iRes.headers.get('Content-Type') || icon.type || 'image/png'
+                          }
+                        }
+                      } catch { /* 继续 */ }
+                    }
+                  }
+                }
+              } catch { /* manifest 解析失败，继续降级 */ }
+            }
+          }
+        }
+      } catch { /* HTML 解析失败，继续降级 */ }
+    }
+
+    // 5. 第四优先：直接访问网站常见图标路径（兜底静态路径探测）
     if (!iconBody) {
       const paths = ['/favicon.ico', '/favicon.svg', '/favicon.png', '/apple-touch-icon.png']
       for (const path of paths) {
         if (iconBody) break
         try {
-          const directRes = await fetch(`https://${domainLower}${path}`, {
+          const directRes = await fetchWithTimeout(`https://${domainLower}${path}`, {
             headers: { 'User-Agent': ua },
             redirect: 'follow',
-          })
+          }, 4000)
           if (directRes.ok) {
             const ct = directRes.headers.get('Content-Type') || ''
             // 确保返回的确实是图片而非 HTML 错误页
             if (ct.includes('image') || ct.includes('icon') || ct.includes('svg')) {
-              const body = await directRes.arrayBuffer()
-              if (body.byteLength > 100) {
+              const body = await safeReadBody(directRes)
+              if (body) {
                 iconBody = body
                 contentType = ct
               }
@@ -179,7 +320,7 @@ api.get('/icon', async (c) => {
       }
     }
 
-    // 5. 第四优先：生成首字母 SVG 图标
+    // 6. 第五优先：生成首字母 SVG 图标
     if (!iconBody) {
       const letter = domainLower.replace(/^www\./, '').charAt(0).toUpperCase()
       // 根据首字母生成稳定的色相（同一字母永远是同一颜色）
@@ -194,19 +335,22 @@ api.get('/icon', async (c) => {
       </svg>`
       iconBody = new TextEncoder().encode(svg).buffer as ArrayBuffer
       contentType = 'image/svg+xml'
+      isGenerated = true
     }
 
-    // 6. 返回并缓存
+    // 7. 返回并缓存（生成的首字母图标只缓存 24 小时，真实图标缓存 7 天）
+    const cacheTTL = isGenerated ? 86400 : 604800
     const responseHeaders = {
       'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=604800, s-maxage=604800',
+      'Cache-Control': `public, max-age=${cacheTTL}, s-maxage=${cacheTTL}`,
       'Access-Control-Allow-Origin': '*',
       'X-Cache': 'MISS',
+      'X-Icon-Source': isGenerated ? 'generated' : 'fetched',
     }
 
     const response = new Response(iconBody, { headers: responseHeaders })
     const responseToCache = new Response(iconBody, {
-      headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=604800, s-maxage=604800' },
+      headers: { 'Content-Type': contentType, 'Cache-Control': `public, max-age=${cacheTTL}, s-maxage=${cacheTTL}` },
     })
     c.executionCtx.waitUntil(cache.put(cacheKey, responseToCache))
 
