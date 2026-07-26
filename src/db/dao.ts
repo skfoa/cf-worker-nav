@@ -194,15 +194,13 @@ export class DAO {
   }
 
   async deleteCategory(id: number): Promise<D1Result> {
-    try {
-      return await this.db.prepare('DELETE FROM categories WHERE id = ?').bind(id).run()
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : ''
-      if (msg.includes('FOREIGN KEY constraint failed') || msg.includes('SQLITE_CONSTRAINT')) {
-        throw new Error('无法删除：请先清空该分类下的所有链接')
-      }
-      throw err
-    }
+    // 级联处理：先解除子分类的父子绑定，再删除该分类下的所有链接，最后删除分类本身
+    const results = await this.db.batch([
+      this.db.prepare('UPDATE categories SET parent_id = NULL, updated_at = ? WHERE parent_id = ?').bind(this.now(), id),
+      this.db.prepare('DELETE FROM links WHERE category_id = ?').bind(id),
+      this.db.prepare('DELETE FROM categories WHERE id = ?').bind(id),
+    ])
+    return results[results.length - 1]
   }
 
   async batchUpdateCategoriesOrder(items: { id: number; sort_order: number }[]): Promise<D1Result[]> {
@@ -313,11 +311,13 @@ export class DAO {
   }
 
   async getStats(): Promise<{ categories: number; links: number; db_latency: string }> {
+    const start = performance.now()
     const [c, l] = await Promise.all([
       this.db.prepare('SELECT COUNT(*) as count FROM categories').first<{ count: number }>(),
       this.db.prepare('SELECT COUNT(*) as count FROM links').first<{ count: number }>(),
     ])
-    return { categories: c?.count || 0, links: l?.count || 0, db_latency: 'low' }
+    const latency = Math.round(performance.now() - start)
+    return { categories: c?.count || 0, links: l?.count || 0, db_latency: `${latency}ms` }
   }
 
   // ===========================================

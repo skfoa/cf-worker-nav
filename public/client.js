@@ -1291,6 +1291,57 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
 
+  // ── 全局快捷键 ──
+  document.addEventListener('keydown', function (e) {
+    // 如果焦点在 input/textarea/select 内，仅处理 Esc
+    const tag = document.activeElement?.tagName;
+    const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+    // Esc: 关闭弹窗 / 清空搜索
+    if (e.key === 'Escape') {
+      const appModal = $('#app-modal');
+      const sysModal = $('#sys-modal');
+      if (appModal && appModal.open) {
+        appModal.close();
+        return;
+      }
+      if (sysModal && sysModal.open) {
+        sysModal.close();
+        return;
+      }
+      // 如果搜索框有内容，清空搜索
+      const si = $('#search-input');
+      if (si && si.value) {
+        si.value = '';
+        si.dispatchEvent(new Event('input'));
+        si.blur();
+        return;
+      }
+    }
+
+    // Ctrl+K / Cmd+K: 聚焦搜索框
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      const si = $('#search-input');
+      if (si) {
+        si.focus();
+        si.select();
+      }
+      return;
+    }
+
+    // Enter: 在站内搜索模式下，跳转到第一个结果
+    if (e.key === 'Enter' && isTyping && document.activeElement === $('#search-input')) {
+      if (currentEngine === 'local') {
+        const firstCard = $('#search-results-grid .link-card');
+        if (firstCard) {
+          e.preventDefault();
+          firstCard.click();
+        }
+      }
+    }
+  });
+
   // ── 初始化 ──
   initTheme();
   initSearchEngines();
