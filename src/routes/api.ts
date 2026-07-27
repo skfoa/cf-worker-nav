@@ -92,7 +92,7 @@ api.post('/visit', async (c) => {
   }
 })
 
-// [GET] 图标代理 (分层并发：第三方竞速 → HTML解析 → 静态路径竞速 → 首字母生成)
+// [GET] 图标代理 (分层降级：DuckDuckGo → HTML解析 → 静态路径竞速 → 首字母生成)
 api.get('/icon', async (c) => {
   const domain = c.req.query('domain')
   if (!domain) return c.text('Missing domain parameter', 400)
@@ -154,41 +154,17 @@ api.get('/icon', async (c) => {
     let contentType = 'image/png'
     let isGenerated = false
 
-    // ═══ 第一层：DuckDuckGo + favicon.im 并发竞速 ═══
-    const tier1Results = await Promise.allSettled([
-      // DuckDuckGo
-      (async (): Promise<{ body: ArrayBuffer; ct: string } | null> => {
-        try {
-          const res = await fetchT(`https://icons.duckduckgo.com/ip3/${domainLower}.ico`, { headers: { 'User-Agent': ua } })
-          if (!res.ok) return null
-          const body = await safeBody(res)
-          return body ? { body, ct: res.headers.get('Content-Type') || 'image/x-icon' } : null
-        } catch { return null }
-      })(),
-      // favicon.im
-      (async (): Promise<{ body: ArrayBuffer; ct: string } | null> => {
-        try {
-          const res = await fetchT(`https://a.favicon.im/${domainLower}`, { headers: { 'User-Agent': ua }, redirect: 'follow' })
-          if (!res.ok) return null
-          const ct = res.headers.get('Content-Type') || ''
-          const finalUrl = res.url || ''
-          const isDefault = finalUrl.includes('favicon.im/default') || finalUrl.includes('favicon.im/icons/default')
-            || (ct.includes('svg') && (await res.clone().text()).length < 1000)
-          if (isDefault) return null
-          const body = await safeBody(res)
-          return body ? { body, ct: ct || 'image/png' } : null
-        } catch { return null }
-      })(),
-    ])
-
-    // 取第一个成功的结果（优先 DuckDuckGo）
-    for (const r of tier1Results) {
-      if (r.status === 'fulfilled' && r.value) {
-        iconBody = r.value.body
-        contentType = r.value.ct
-        break
+    // ═══ 第一层：DuckDuckGo 图标服务 ═══
+    try {
+      const res = await fetchT(`https://icons.duckduckgo.com/ip3/${domainLower}.ico`, { headers: { 'User-Agent': ua } })
+      if (res.ok) {
+        const body = await safeBody(res)
+        if (body) {
+          iconBody = body
+          contentType = res.headers.get('Content-Type') || 'image/x-icon'
+        }
       }
-    }
+    } catch { /* DuckDuckGo 不可达，继续降级 */ }
 
     // ═══ 第二层：解析 HTML <head> + manifest ═══
     if (!iconBody) {
