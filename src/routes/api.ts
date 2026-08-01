@@ -94,8 +94,68 @@ api.post('/visit', async (c) => {
 
 // [GET] 图标代理 (分层降级：DuckDuckGo → HTML解析 → 静态路径竞速 → 首字母生成)
 api.get('/icon', async (c) => {
+  const directUrl = c.req.query('url')
   const domain = c.req.query('domain')
-  if (!domain) return c.text('Missing domain parameter', 400)
+
+  // ═══ 模式一：直接代理指定 URL（用户手动填写的自定义图标地址） ═══
+  if (directUrl) {
+    try {
+      const parsed = new URL(directUrl)
+      if (!['http:', 'https:'].includes(parsed.protocol)) return c.text('Invalid URL', 400)
+    } catch { return c.text('Invalid URL', 400) }
+
+    const cache = caches.default
+    const cacheKey = new Request(`https://icon-cache.internal/icon-url/${encodeURIComponent(directUrl)}`, { method: 'GET' })
+
+    // 检查缓存
+    const cached = await cache.match(cacheKey)
+    if (cached) {
+      const h = new Headers(cached.headers)
+      h.set('X-Cache', 'HIT')
+      return new Response(cached.body, { status: cached.status, headers: h })
+    }
+
+    try {
+      const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      const ac = new AbortController()
+      const timer = setTimeout(() => ac.abort(), 6000)
+      const res = await fetch(directUrl, {
+        headers: { 'User-Agent': ua },
+        redirect: 'follow',
+        signal: ac.signal,
+      })
+      clearTimeout(timer)
+
+      if (!res.ok) return c.text('Upstream error', 502)
+      const ct = res.headers.get('Content-Type') || ''
+      if (!(ct.includes('image') || ct.includes('icon') || ct.includes('svg') || ct.includes('octet-stream'))) {
+        return c.text('Not an image', 400)
+      }
+      const body = await res.arrayBuffer()
+      if (body.byteLength > 512 * 1024) return c.text('Image too large', 413)
+
+      const contentType = ct.includes('octet-stream') ? 'image/png' : ct
+      const response = new Response(body, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'public, max-age=604800, s-maxage=604800',
+          'Access-Control-Allow-Origin': '*',
+          'X-Cache': 'MISS',
+        },
+      })
+      c.executionCtx.waitUntil(
+        cache.put(cacheKey, new Response(body, {
+          headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=604800, s-maxage=604800' },
+        }))
+      )
+      return response
+    } catch {
+      return c.text('Fetch failed', 502)
+    }
+  }
+
+  // ═══ 模式二：按域名自动探测图标 ═══
+  if (!domain) return c.text('Missing domain or url parameter', 400)
   if (!/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*\.[a-zA-Z]{2,}$/.test(domain)) {
     return c.text('Invalid domain format', 400)
   }

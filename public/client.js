@@ -223,7 +223,12 @@
   }
 
   function linkCardHtml(link) {
-    const iconSrc = link.icon || ('/api/icon?domain=' + encodeURIComponent(new URL(link.url).hostname));
+    var iconSrc;
+    if (link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://'))) {
+      iconSrc = '/api/icon?url=' + encodeURIComponent(link.icon);
+    } else {
+      iconSrc = '/api/icon?domain=' + encodeURIComponent(new URL(link.url).hostname);
+    }
     const adminBtns = isAdmin ? '<div class="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">' +
       '<button type="button" class="btn btn-ghost btn-xs btn-circle edit-link-btn text-xs" data-link-id="' + link.id + '">✏️</button>' +
       '<button type="button" class="btn btn-ghost btn-xs btn-circle delete-link-btn text-xs" data-link-id="' + link.id + '">🗑️</button></div>' : '';
