@@ -52,7 +52,8 @@ export const LinkCard: FC<LinkCardProps> = ({ link, isAdmin }) => {
           alt=""
           class="w-10 h-10 object-contain"
           loading="lazy"
-          onerror={`var l='${link.title.charAt(0).toUpperCase()||'?'}';var h=(l.charCodeAt(0)*37)%360;this.onerror=null;this.src='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="hsl('+h+',60%,50%)"/><text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">'+l+'</text></svg>')`}
+          data-original-icon={link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://')) ? link.icon : undefined}
+          onerror={`var oi=this.getAttribute('data-original-icon');if(oi){this.removeAttribute('data-original-icon');this.src=oi;return;}var l='${link.title.charAt(0).toUpperCase()||'?'}';var h=(l.charCodeAt(0)*37)%360;this.onerror=null;this.src='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="hsl('+h+',60%,50%)"/><text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">'+l+'</text></svg>')`}
         />
       </div>
 

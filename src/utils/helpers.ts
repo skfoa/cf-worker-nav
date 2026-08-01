@@ -6,7 +6,9 @@
  * 构建图标代理 URL
  */
 export function getIconUrl(link: { icon?: string; url: string }): string {
-  if (link.icon) return link.icon
+  if (link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://'))) {
+    return `/api/icon?url=${encodeURIComponent(link.icon)}`
+  }
   try {
     const domain = new URL(link.url).hostname
     return `/api/icon?domain=${encodeURIComponent(domain)}`
