@@ -120,6 +120,13 @@ export class DAO {
       .run()
   }
 
+  async resetVisits(id: number): Promise<D1Result> {
+    return await this.db
+      .prepare('UPDATE links SET visits = 0 WHERE id = ?')
+      .bind(id)
+      .run()
+  }
+
   // ===========================================
   // Token 管理
   // ===========================================

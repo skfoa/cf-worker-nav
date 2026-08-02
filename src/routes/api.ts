@@ -499,6 +499,13 @@ api.post('/link/delete', requireAuth, async (c) => {
   return c.json(await dao.deleteLink(body.id))
 })
 
+api.post('/link/reset-visits', requireAuth, async (c) => {
+  const dao = c.get('dao')
+  const body = await c.req.json() as { id: number }
+  if (!body.id) return c.json({ error: 'Missing id' }, 400)
+  return c.json(await dao.resetVisits(body.id))
+})
+
 api.post('/link/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
