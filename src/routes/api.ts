@@ -468,15 +468,7 @@ api.post('/category/delete', requireAuth, async (c) => {
 api.post('/category/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  const res = await dao.batchUpdateCategoriesOrder(data)
-  
-  const clientIP = c.get('clientIP')
-  const region = (c.req.raw as any)?.cf?.country || 'Local'
-  c.executionCtx.waitUntil(
-    dao.addLog({ ip: clientIP, region, level: 'INFO', action: 'reorder_categories', details: JSON.stringify({ count: data.length }) })
-  )
-  
-  return c.json(res)
+  return c.json(await dao.batchUpdateCategoriesOrder(data))
 })
 
 // ── Link CRUD ──
@@ -509,15 +501,7 @@ api.post('/link/reset-visits', requireAuth, async (c) => {
 api.post('/link/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  const res = await dao.batchUpdateLinksOrder(data)
-
-  const clientIP = c.get('clientIP')
-  const region = (c.req.raw as any)?.cf?.country || 'Local'
-  c.executionCtx.waitUntil(
-    dao.addLog({ ip: clientIP, region, level: 'INFO', action: 'reorder_links', details: JSON.stringify({ count: data.length }) })
-  )
-  
-  return c.json(res)
+  return c.json(await dao.batchUpdateLinksOrder(data))
 })
 
 // ==========================================
@@ -540,21 +524,7 @@ api.post('/config', requireAuth, requireRoot, zValidator('json', ConfigUpdateSch
 api.post('/import', requireAuth, requireRoot, async (c) => {
   const dao = c.get('dao')
   const body = await c.req.json()
-  const res = await dao.importData(body)
-
-  const clientIP = c.get('clientIP')
-  const region = (c.req.raw as any)?.cf?.country || 'Local'
-  c.executionCtx.waitUntil(
-    dao.addLog({ 
-      ip: clientIP, 
-      region, 
-      level: 'WARN', 
-      action: 'import_data', 
-      details: JSON.stringify({ imported_count: res.count, skipped_count: res.skipped_count }) 
-    })
-  )
-  
-  return c.json(res)
+  return c.json(await dao.importData(body))
 })
 
 api.get('/export', requireAuth, requireRoot, async (c) => {
@@ -606,17 +576,7 @@ api.get('/export', requireAuth, requireRoot, async (c) => {
     }
   }
 
-  const clientIP = c.get('clientIP')
-  const region = (c.req.raw as any)?.cf?.country || 'Local'
-  c.executionCtx.waitUntil(
-    dao.addLog({
-      ip: clientIP,
-      region,
-      level: 'INFO',
-      action: 'export_data',
-      details: JSON.stringify({ category_count: exportData.length })
-    })
-  )
+
 
   const dateStr = new Date().toISOString().slice(0, 10)
   c.header('Content-Disposition', `attachment; filename="nav-backup-${dateStr}.json"`)
@@ -650,13 +610,6 @@ api.get('/logs', requireAuth, requireRoot, async (c) => {
 api.post('/logs/clear', requireAuth, requireRoot, async (c) => {
   const dao = c.get('dao')
   const result = await dao.clearLogs()
-
-  const clientIP = c.get('clientIP')
-  const region = (c.req.raw as any)?.cf?.country || 'Local'
-  c.executionCtx.waitUntil(
-    dao.addLog({ ip: clientIP, region, level: 'WARN', action: 'clear_logs', details: `Cleared ${result.deleted} logs` })
-  )
-
   return c.json({ success: true, ...result })
 })
 
