@@ -407,6 +407,9 @@ api.post('/auth/login', async (c) => {
   const isRoot = await safeCompare(password, c.env.PASSWORD)
   if (!isRoot) {
     const result = await dao.recordFailedAttempt(clientIP)
+    c.executionCtx.waitUntil(
+      dao.addLog({ ip: clientIP, region, level: 'WARN', action: 'login_failed', details: `Wrong password. Attempts: ${result.attempts}/5` })
+    )
     if (result.locked) {
       c.executionCtx.waitUntil(
         dao.addLog({ ip: clientIP, region, level: 'DANGER', action: 'ip_lockout', details: `Failed 5 times. Locked for 15 mins.` })

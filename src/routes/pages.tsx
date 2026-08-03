@@ -89,6 +89,15 @@ const renderApp = async (c: any) => {
       isAdmin: isUser,
     })
 
+    // 记录后台访问日志（仅 /admin 且已认证）
+    if (new URL(c.req.url).pathname === '/admin' && isUser) {
+      const clientIP = c.get('clientIP')
+      const region = (c.req.raw as any)?.cf?.country || 'Local'
+      c.executionCtx.waitUntil(
+        dao.addLog({ ip: clientIP, region, level: 'INFO', action: 'admin_access', details: 'Admin panel accessed' })
+      )
+    }
+
     return c.html(
       <Layout title={title} bgImage={bgImage}>
         <Navbar categories={ssrData} />
