@@ -1058,18 +1058,11 @@
       } else {
         function getActionBadge(action) {
           const map = {
-            'login': { text: '登录后台', cls: 'bg-primary text-primary-content' },
-            'add_category': { text: '添加分类', cls: 'bg-emerald-500 text-white' },
-            'add_link': { text: '添加链接', cls: 'bg-emerald-500 text-white' },
-            'update_category': { text: '修改分类', cls: 'bg-blue-500 text-white' },
-            'update_link': { text: '修改链接', cls: 'bg-blue-500 text-white' },
-            'delete_category': { text: '删除分类', cls: 'bg-rose-500 text-white' },
-            'delete_link': { text: '删除链接', cls: 'bg-rose-500 text-white' },
-            'reorder_categories': { text: '排序分类', cls: 'bg-purple-500 text-white' },
-            'reorder_links': { text: '排序链接', cls: 'bg-purple-500 text-white' },
-            'import_data': { text: '导入数据', cls: 'bg-emerald-500 text-white' },
-            'clear_logs': { text: '清空日志', cls: 'bg-rose-500 text-white' },
+            'admin_access': { text: '进入后台', cls: 'bg-primary text-primary-content' },
+            'login': { text: '登录成功', cls: 'bg-emerald-500 text-white' },
+            'login_failed': { text: '登录失败', cls: 'bg-amber-500 text-white' },
             'ip_lockout': { text: 'IP 锁定', cls: 'bg-rose-500 text-white' },
+            'session_verification_failed': { text: '伪造会话', cls: 'bg-rose-500 text-white' },
           };
           const match = map[action];
           if (match) return '<span class="inline-block px-2.5 py-1 rounded text-xs font-medium ' + match.cls + '">' + match.text + '</span>';
