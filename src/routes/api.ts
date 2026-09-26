@@ -474,30 +474,51 @@ api.get('/data', requireAuth, async (c) => {
   return c.json(await dao.getAllData(true))
 })
 
+// 辅助函数：清除公开边缘缓存（首页 SSR + 公共配置）
+function purgePublicCache(c: any) {
+  try {
+    const url = new URL(c.req.url)
+    const homeKey = new Request(`${url.origin}/`, { method: 'GET' })
+    const configKey = new Request(`${url.origin}/api/config`, { method: 'GET' })
+    c.executionCtx.waitUntil(Promise.all([
+      caches.default.delete(homeKey),
+      caches.default.delete(configKey),
+    ]))
+  } catch { /* ignore */ }
+}
+
 // ── Category CRUD ──
 
 api.post('/category', requireAuth, zValidator('json', CategoryCreateSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  return c.json(await dao.addCategory(data))
+  const res = await dao.addCategory(data)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 api.post('/category/update', requireAuth, zValidator('json', CategoryUpdateSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  return c.json(await dao.updateCategory(data))
+  const res = await dao.updateCategory(data)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 api.post('/category/delete', requireAuth, async (c) => {
   const dao = c.get('dao')
   const body = await c.req.json() as { id: number }
-  return c.json(await dao.deleteCategory(body.id))
+  const res = await dao.deleteCategory(body.id)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 api.post('/category/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  return c.json(await dao.batchUpdateCategoriesOrder(data))
+  const res = await dao.batchUpdateCategoriesOrder(data)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 // ── Link CRUD ──
@@ -505,19 +526,25 @@ api.post('/category/reorder', requireAuth, zValidator('json', ReorderSchema), as
 api.post('/link', requireAuth, zValidator('json', LinkCreateSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  return c.json(await dao.addLink(data))
+  const res = await dao.addLink(data)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 api.post('/link/update', requireAuth, zValidator('json', LinkUpdateSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  return c.json(await dao.updateLink(data))
+  const res = await dao.updateLink(data)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 api.post('/link/delete', requireAuth, async (c) => {
   const dao = c.get('dao')
   const body = await c.req.json() as { id: number }
-  return c.json(await dao.deleteLink(body.id))
+  const res = await dao.deleteLink(body.id)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 api.post('/link/reset-visits', requireAuth, async (c) => {
@@ -530,7 +557,9 @@ api.post('/link/reset-visits', requireAuth, async (c) => {
 api.post('/link/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
-  return c.json(await dao.batchUpdateLinksOrder(data))
+  const res = await dao.batchUpdateLinksOrder(data)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 // ==========================================
@@ -541,19 +570,16 @@ api.post('/config', requireAuth, requireRoot, zValidator('json', ConfigUpdateSch
   const dao = c.get('dao')
   const { key, value } = c.req.valid('json')
   await dao.updateConfig(key, value)
-
-  // 清除缓存
-  const url = new URL(c.req.url)
-  const cacheKey = new Request(`${url.origin}/api/config`, { method: 'GET' })
-  c.executionCtx.waitUntil(caches.default.delete(cacheKey))
-
+  purgePublicCache(c)
   return c.json({ status: 'ok', key, value })
 })
 
 api.post('/import', requireAuth, requireRoot, async (c) => {
   const dao = c.get('dao')
   const body = await c.req.json()
-  return c.json(await dao.importData(body))
+  const res = await dao.importData(body)
+  purgePublicCache(c)
+  return c.json(res)
 })
 
 api.get('/export', requireAuth, requireRoot, async (c) => {

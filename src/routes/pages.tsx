@@ -69,10 +69,27 @@ pages.get('/manifest.json', async (c) => {
 
 // [GET] 首页及管理员入口
 const renderApp = async (c: any) => {
-  const dao = c.get('dao')
   const isUser = c.get('isUser')
   const isRoot = c.get('isRoot')
+  const url = new URL(c.req.url)
+  const isHome = url.pathname === '/'
 
+  // 边缘缓存：仅对未登录访客的首页 (/) 启用 caches.default 缓存 (5分钟)
+  const cache = caches.default
+  const cacheKey = new Request(`${url.origin}/`, { method: 'GET' })
+
+  if (!isUser && isHome) {
+    try {
+      const cached = await cache.match(cacheKey)
+      if (cached) {
+        const headers = new Headers(cached.headers)
+        headers.set('X-Cache', 'HIT')
+        return new Response(cached.body, { status: cached.status, headers })
+      }
+    } catch { /* cache fallback */ }
+  }
+
+  const dao = c.get('dao')
   try {
     // getAllData() 内部已调用 getConfigs()，直接解构复用，避免重复 D1 查询
     const { nav: ssrData, config } = await dao.getAllData(isUser)
@@ -88,7 +105,7 @@ const renderApp = async (c: any) => {
     })
 
     // 记录后台访问日志（仅 /admin 且已认证）
-    if (new URL(c.req.url).pathname === '/admin' && isUser) {
+    if (url.pathname === '/admin' && isUser) {
       const clientIP = c.get('clientIP')
       const region = (c.req.raw as any)?.cf?.country || 'Local'
       c.executionCtx.waitUntil(
@@ -96,7 +113,19 @@ const renderApp = async (c: any) => {
       )
     }
 
-    return c.html(
+    const headers: Record<string, string> = {
+      'Content-Type': 'text/html; charset=UTF-8',
+      'Vary': 'Cookie, Accept-Encoding',
+    }
+
+    if (!isUser && isHome) {
+      headers['Cache-Control'] = 'public, max-age=0, s-maxage=300, stale-while-revalidate=60'
+      headers['X-Cache'] = 'MISS'
+    } else {
+      headers['Cache-Control'] = 'private, no-cache, no-store, must-revalidate'
+    }
+
+    const response = c.html(
       <Layout title={title} bgImage={bgImage}>
         <Navbar categories={ssrData} />
         <SearchBox />
@@ -107,8 +136,18 @@ const renderApp = async (c: any) => {
         <script dangerouslySetInnerHTML={{ __html: `window.__NAV_STATE__=${clientState};` }} />
         {/* 客户端逻辑 */}
         <script src="/client.min.js" />
-      </Layout>
+      </Layout>,
+      200,
+      headers
     )
+
+    if (!isUser && isHome) {
+      try {
+        c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()))
+      } catch { /* cache fallback */ }
+    }
+
+    return response
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error'
     return c.html(

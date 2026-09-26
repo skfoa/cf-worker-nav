@@ -8,10 +8,20 @@ import { getIconUrl } from '../utils/helpers'
 interface LinkCardProps {
   link: Link
   isAdmin?: boolean
+  lazy?: boolean
 }
 
-export const LinkCard: FC<LinkCardProps> = ({ link, isAdmin }) => {
+const LAZY_PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E"
+
+export const LinkCard: FC<LinkCardProps> = ({ link, isAdmin, lazy = false }) => {
   const iconSrc = getIconUrl(link)
+  const targetSrc = iconSrc || (() => {
+    try {
+      return `/api/icon?domain=${encodeURIComponent(new URL(link.url).hostname)}`
+    } catch {
+      return '/api/icon?domain=default'
+    }
+  })()
 
   return (
     <a
@@ -48,7 +58,8 @@ export const LinkCard: FC<LinkCardProps> = ({ link, isAdmin }) => {
       {/* 图标 — 无背景块，直接悬浮 */}
       <div class="w-14 h-14 flex items-center justify-center flex-shrink-0">
         <img
-          src={iconSrc || `/api/icon?domain=${encodeURIComponent(new URL(link.url).hostname)}`}
+          src={lazy ? LAZY_PLACEHOLDER : targetSrc}
+          data-src={lazy ? targetSrc : undefined}
           alt=""
           class="w-10 h-10 object-contain"
           loading="lazy"

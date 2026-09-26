@@ -23,7 +23,7 @@ export const LinkGrid: FC<LinkGridProps> = ({ categories, isAdmin }) => (
           data-sub-id={cat.id}
         >
           {cat.items.map(link => (
-            <LinkCard link={link} isAdmin={isAdmin} />
+            <LinkCard link={link} isAdmin={isAdmin} lazy={idx !== 0} />
           ))}
         </div>
         {(!cat.children || cat.children.length === 0) && cat.items.length === 0 && (
@@ -39,7 +39,7 @@ export const LinkGrid: FC<LinkGridProps> = ({ categories, isAdmin }) => (
             data-sub-id={ch.id}
           >
             {ch.items.map(link => (
-              <LinkCard link={link} isAdmin={isAdmin} />
+              <LinkCard link={link} isAdmin={isAdmin} lazy={true} />
             ))}
           </div>
         ))}

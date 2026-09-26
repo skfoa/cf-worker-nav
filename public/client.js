@@ -185,28 +185,44 @@
     }
   }
 
+  const LAZY_PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E";
+
+  function loadLazyImages(container) {
+    if (!container) return;
+    const lazyImgs = container.querySelectorAll('img[data-src]');
+    lazyImgs.forEach(img => {
+      const src = img.getAttribute('data-src');
+      if (src) {
+        img.src = src;
+        img.removeAttribute('data-src');
+      }
+    });
+  }
+
   function renderGrid() {
     const container = $('#link-sections');
     if (!container) return;
     container.innerHTML = state.data.map((cat, i) => {
       const hidden = i !== currentCatIdx ? 'hidden' : '';
       const hasChildren = cat.children && cat.children.length > 0;
+      const isCatActive = i === currentCatIdx;
 
       // 父分类自身链接
       const showParent = !currentSubId || !hasChildren;
       let gridsHtml = '<div id="grid-' + cat.id + '" class="sub-grid grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3' +
         (showParent ? '' : ' hidden') + '" data-sub-id="' + cat.id + '">' +
-        cat.items.map(link => linkCardHtml(link)).join('') +
+        cat.items.map(link => linkCardHtml(link, !isCatActive || !showParent)).join('') +
         '</div>';
 
       // 子分类链接
       if (hasChildren) {
-        gridsHtml += cat.children.map(ch =>
-          '<div id="grid-' + ch.id + '" class="sub-grid grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3' +
-          (currentSubId === ch.id ? '' : ' hidden') + '" data-sub-id="' + ch.id + '">' +
-          ch.items.map(link => linkCardHtml(link)).join('') +
-          '</div>'
-        ).join('');
+        gridsHtml += cat.children.map(ch => {
+          const isSubActive = isCatActive && currentSubId === ch.id;
+          return '<div id="grid-' + ch.id + '" class="sub-grid grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3' +
+            (isSubActive ? '' : ' hidden') + '" data-sub-id="' + ch.id + '">' +
+            ch.items.map(link => linkCardHtml(link, !isSubActive)).join('') +
+            '</div>';
+        }).join('');
       }
 
       const activeSubItems = currentSubId && hasChildren
@@ -220,16 +236,22 @@
     }).join('') +
       '<section id="search-results" class="hidden"><div id="search-results-grid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3"></div>' +
       '<div id="search-empty" class="text-center text-base-content/30 py-16 text-sm hidden">未找到匹配的链接</div></section>';
+
+    loadLazyImages(container.querySelector('.cat-section:not(.hidden)'));
   }
 
-  function linkCardHtml(link) {
+  function linkCardHtml(link, isLazy) {
     var iconSrc;
     var originalIcon = '';
     if (link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://'))) {
       iconSrc = '/api/icon?url=' + encodeURIComponent(link.icon);
       originalIcon = link.icon; // 保存原始 URL，代理失败时直连
     } else {
-      iconSrc = '/api/icon?domain=' + encodeURIComponent(new URL(link.url).hostname);
+      try {
+        iconSrc = '/api/icon?domain=' + encodeURIComponent(new URL(link.url).hostname);
+      } catch {
+        iconSrc = '/api/icon?domain=default';
+      }
     }
     const adminBtns = isAdmin ? '<div class="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">' +
       '<button type="button" class="btn btn-ghost btn-xs btn-circle edit-link-btn text-xs" data-link-id="' + link.id + '">✏️</button>' +
@@ -237,13 +259,16 @@
     const desc = link.description ? escapeHtml(link.description) : '';
     const tooltipCls = desc ? ' tooltip tooltip-top' : '';
     const tooltipAttr = desc ? ' data-tip="' + desc + '"' : '';
+    const imgHtml = isLazy
+      ? '<img src="' + LAZY_PLACEHOLDER + '" data-src="' + escapeHtml(iconSrc) + '" alt="" class="w-10 h-10 object-contain" loading="lazy"'
+      : '<img src="' + escapeHtml(iconSrc) + '" alt="" class="w-10 h-10 object-contain" loading="lazy"';
     return '<a href="' + escapeHtml(link.url) + '" target="_blank" rel="noopener noreferrer" ' +
       'class="link-card glass-card rounded-3xl p-4 flex flex-col items-center justify-center gap-3 group cursor-pointer no-underline relative aspect-square' + tooltipCls + '" ' +
       tooltipAttr +
       'data-link-id="' + link.id + '" data-cat-id="' + link.category_id + '" data-title="' + escapeHtml(link.title) + '" data-url="' + escapeHtml(link.url) + '">' +
       adminBtns +
       '<div class="w-14 h-14 flex items-center justify-center flex-shrink-0">' +
-      '<img src="' + escapeHtml(iconSrc) + '" alt="" class="w-10 h-10 object-contain" loading="lazy"' +
+      imgHtml +
       (originalIcon ? ' data-original-icon="' + escapeHtml(originalIcon) + '"' : '') +
       ' onerror="var oi=this.getAttribute(\'data-original-icon\');if(oi){this.removeAttribute(\'data-original-icon\');this.src=oi;return;}var l=(\'' + escapeHtml(link.title) + '\').charAt(0).toUpperCase()||\'?\';var h=(l.charCodeAt(0)*37)%360;this.onerror=null;this.src=\'data:image/svg+xml,\'+encodeURIComponent(\'<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 64 64&quot;><rect width=&quot;64&quot; height=&quot;64&quot; rx=&quot;14&quot; fill=&quot;hsl(\'+h+\',60%,50%)&quot;/><text x=&quot;32&quot; y=&quot;32&quot; font-family=&quot;system-ui,sans-serif&quot; font-size=&quot;30&quot; font-weight=&quot;600&quot; fill=&quot;white&quot; text-anchor=&quot;middle&quot; dominant-baseline=&quot;central&quot;>\'+l+\'</text></svg>\')"></div>' +
       '<div class="text-xs font-medium text-center text-base-content/80 truncate w-full leading-tight">' +
@@ -312,6 +337,7 @@
           const isTarget = currentSubId ? (parseInt(el.dataset.subId) === currentSubId) : (parseInt(el.dataset.subId) === parseInt(activeSection.dataset.catId));
           el.classList.toggle('hidden', !isTarget);
         });
+        loadLazyImages(activeSection);
       }
       $('#search-results')?.classList.add('hidden');
       const searchInput = $('#search-input');
@@ -357,6 +383,7 @@
           const isTarget = currentSubId ? (parseInt(el.dataset.subId) === currentSubId) : (parseInt(el.dataset.subId) === parseInt(activeSection.dataset.catId));
           el.classList.toggle('hidden', !isTarget);
         });
+        loadLazyImages(activeSection);
       }
       if (sortMode) { disableSort(); enableSort(); }
     }
@@ -1367,4 +1394,5 @@
   renderDock();
   bindSubDropdownHover($('#nav-scroll'), $('#sub-dropdown-container'));
   checkAuth();
+  loadLazyImages($('.cat-section:not(.hidden)'));
 })();
