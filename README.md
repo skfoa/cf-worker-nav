@@ -85,7 +85,7 @@
 - **Account ID**：在 Cloudflare Dashboard → Workers & Pages 面板右侧复制。
 
 #### 3. 配置 GitHub 密钥
-在您 Fork 后的仓库页面 → **Settings** → **Secrets and variables** → **Actions** → 点击 **New repository secret**，依次添加以下五个变量：
+在您 Fork 后的仓库页面 → **Settings** → **Secrets and variables** → **Actions** → 点击 **New repository secret**，依次添加以下六个变量：
 
 | 密钥名称 (Name) | 密钥内容 (Value) |
 |---|---|
@@ -93,6 +93,7 @@
 | `CLOUDFLARE_ACCOUNT_ID` | 您的 Cloudflare 账户 ID |
 | `CLOUDFLARE_D1_ID` | **前置步骤**中创建的 D1 Database ID |
 | `PASSWORD` | 您想设置的后台最高权限登录密码 |
+| `COOKIE_SECRET` | 填写一段随机复杂的字符串，用于 Cookie Session 签名防伪造 |
 | `TOKEN_SALT` | 随意填写一段复杂的英文字符串，用于数据加密 |
 
 #### 4. 一键触发部署
@@ -127,7 +128,7 @@ npx wrangler d1 execute nav-db --remote --file=migrations/0001_init.sql
 npm run deploy
 ```
 
-> **注意**：部署完成后，请前往 Cloudflare 控制台 -> Workers -> `cf-worker-nav` -> Settings -> Variables，手动添加 `PASSWORD` 环境变量作为您的登录密码。
+> **注意**：部署完成后，请前往 Cloudflare 控制台 -> Workers -> `cf-worker-nav` -> Settings -> Variables，手动添加 `PASSWORD` 和 `COOKIE_SECRET` 环境变量作为您的登录凭证与会话签名密钥。
 
 ---
 

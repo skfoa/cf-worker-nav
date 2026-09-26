@@ -9,6 +9,10 @@ import { verifySession } from '../utils/session'
 import { DAO } from '../db/dao'
 import type { HonoEnv } from '../types'
 
+export function getCookieSecret(env: import('../types').Env): string {
+  return env.COOKIE_SECRET || env.TOKEN_SALT || 'nav_default_cookie_secret_CHANGE_IN_PRODUCTION'
+}
+
 /**
  * DAO 初始化中间件 — 在所有路由前执行
  */
@@ -16,8 +20,11 @@ export const daoMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   if (!c.env.DB) {
     return c.json({ error: 'Database D1 is not bound. Check wrangler.toml', success: false }, 500)
   }
-  if (!c.env.COOKIE_SECRET || !c.env.PASSWORD) {
-    return c.json({ error: 'System unconfigured: COOKIE_SECRET and PASSWORD are required in env', success: false }, 500)
+  if (!c.env.PASSWORD) {
+    return c.json({ error: 'System unconfigured: PASSWORD is required in env', success: false }, 500)
+  }
+  if (!c.env.COOKIE_SECRET) {
+    console.warn('[Security] ⚠️ COOKIE_SECRET is not configured! Falling back to TOKEN_SALT / default secret.')
   }
   const dao = new DAO(c.env.DB, c.env)
   c.set('dao', dao)
@@ -52,7 +59,8 @@ export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   } 
   // 2. Cookie Authentication
   else if (cookieToken) {
-    const payload = await verifySession(cookieToken, c.env.COOKIE_SECRET! + c.env.PASSWORD!)
+    const cookieSecret = getCookieSecret(c.env)
+    const payload = await verifySession(cookieToken, cookieSecret + c.env.PASSWORD!)
     if (payload === 'root') {
       isRoot = true
       isUser = true

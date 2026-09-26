@@ -37,9 +37,11 @@ jobs:
           secrets: |
             PASSWORD
             TOKEN_SALT
+            COOKIE_SECRET
         env:
           PASSWORD: ${{ secrets.PASSWORD }}
           TOKEN_SALT: ${{ secrets.TOKEN_SALT }}
+          COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
 
       - name: Initialize D1 Database
         if: github.event_name == 'workflow_dispatch'

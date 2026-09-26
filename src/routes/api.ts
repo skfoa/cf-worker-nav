@@ -10,7 +10,7 @@ import {
   CategoryCreateSchema, CategoryUpdateSchema,
   ReorderSchema, ConfigUpdateSchema,
 } from '../types'
-import { requireAuth, requireRoot } from '../middleware/auth'
+import { requireAuth, requireRoot, getCookieSecret } from '../middleware/auth'
 import { signSession } from '../utils/session'
 import { safeCompare } from '../utils/security'
 
@@ -399,7 +399,7 @@ api.post('/auth/login', async (c) => {
   }
 
   const { password } = await c.req.json().catch(() => ({ password: '' }))
-  if (!password || !c.env.PASSWORD || !c.env.COOKIE_SECRET) {
+  if (!password || !c.env.PASSWORD) {
     await dao.recordFailedAttempt(clientIP)
     return c.json({ error: 'Unauthorized' }, 401)
   }
@@ -419,7 +419,8 @@ api.post('/auth/login', async (c) => {
   }
 
   await dao.clearRateLimit(clientIP)
-  const token = await signSession('root', c.env.COOKIE_SECRET + c.env.PASSWORD)
+  const cookieSecret = getCookieSecret(c.env)
+  const token = await signSession('root', cookieSecret + c.env.PASSWORD)
   
   setCookie(c, 'nav_token', token, {
     httpOnly: true,
