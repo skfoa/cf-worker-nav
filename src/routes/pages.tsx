@@ -74,12 +74,10 @@ const renderApp = async (c: any) => {
   const isRoot = c.get('isRoot')
 
   try {
-    const config = await dao.getConfigs()
+    // getAllData() 内部已调用 getConfigs()，直接解构复用，避免重复 D1 查询
+    const { nav: ssrData, config } = await dao.getAllData(isUser)
     const title = config.title || c.env.TITLE || 'My Nav'
     const bgImage = config.bg_image || c.env.BG_IMAGE || ''
-
-    // 私有模式下未登录不注入数据，否则拉取全量数据
-    const ssrData = (await dao.getAllData(isUser)).nav
 
     // 构建安全的客户端状态
     const clientState = safeJsonStringify({

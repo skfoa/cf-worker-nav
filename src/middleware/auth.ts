@@ -17,6 +17,10 @@ export function getCookieSecret(env: import('../types').Env): string {
  * DAO 初始化中间件 — 在所有路由前执行
  */
 export const daoMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
+  // GET /api/icon 不需要 DAO（只用 caches.default + fetch），跳过以减少 CPU 时间
+  if (c.req.path === '/api/icon' && c.req.method === 'GET') {
+    return next()
+  }
   if (!c.env.DB) {
     return c.json({ error: 'Database D1 is not bound. Check wrangler.toml', success: false }, 500)
   }
@@ -36,6 +40,10 @@ export const daoMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
  * 结果写入 c.set('isRoot') 和 c.set('isUser')
  */
 export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
+  // GET /api/icon 不需要鉴权（公开接口），跳过 Cookie 解析和 Session 验证
+  if (c.req.path === '/api/icon' && c.req.method === 'GET') {
+    return next()
+  }
   const dao = c.get('dao')
   const authHeader = c.req.header('Authorization')
   const cookieToken = getCookie(c, 'nav_token')
