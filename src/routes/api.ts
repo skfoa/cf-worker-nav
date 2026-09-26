@@ -92,6 +92,21 @@ api.post('/visit', async (c) => {
   }
 })
 
+// 辅助函数：生成美观的彩色渐变首字母 SVG 图标
+function generateLetterSvg(seed: string): string {
+  const clean = seed.replace(/^https?:\/\//i, '').replace(/^www\./i, '')
+  const letter = clean.charAt(0).toUpperCase() || '?'
+  const hue = (letter.charCodeAt(0) * 37) % 360
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+    <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:hsl(${hue},65%,55%)"/>
+      <stop offset="100%" style="stop-color:hsl(${(hue + 30) % 360},55%,45%)"/>
+    </linearGradient></defs>
+    <rect width="64" height="64" rx="14" fill="url(#g)"/>
+    <text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">${letter}</text>
+  </svg>`
+}
+
 // [GET] 图标代理 (分层降级：DuckDuckGo → HTML解析 → 静态路径竞速 → 首字母生成)
 api.get('/icon', async (c) => {
   const directUrl = c.req.query('url')
@@ -118,7 +133,7 @@ api.get('/icon', async (c) => {
     try {
       const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       const ac = new AbortController()
-      const timer = setTimeout(() => ac.abort(), 6000)
+      const timer = setTimeout(() => ac.abort(), 5000)
       const res = await fetch(directUrl, {
         headers: { 'User-Agent': ua },
         redirect: 'follow',
@@ -126,32 +141,53 @@ api.get('/icon', async (c) => {
       })
       clearTimeout(timer)
 
-      if (!res.ok) return c.text('Upstream error', 502)
-      const ct = res.headers.get('Content-Type') || ''
-      if (!(ct.includes('image') || ct.includes('icon') || ct.includes('svg') || ct.includes('octet-stream'))) {
-        return c.text('Not an image', 400)
+      if (res.ok) {
+        const ct = res.headers.get('Content-Type') || ''
+        if (ct.includes('image') || ct.includes('icon') || ct.includes('svg') || ct.includes('octet-stream')) {
+          const body = await res.arrayBuffer()
+          if (body.byteLength > 0 && body.byteLength <= 512 * 1024) {
+            const contentType = ct.includes('octet-stream') ? 'image/png' : ct
+            const response = new Response(body, {
+              headers: {
+                'Content-Type': contentType,
+                'Cache-Control': 'public, max-age=604800, s-maxage=604800',
+                'Access-Control-Allow-Origin': '*',
+                'X-Cache': 'MISS',
+                'X-Icon-Source': 'direct-fetched',
+              },
+            })
+            c.executionCtx.waitUntil(
+              cache.put(cacheKey, new Response(body, {
+                headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=604800, s-maxage=604800' },
+              }))
+            )
+            return response
+          }
+        }
       }
-      const body = await res.arrayBuffer()
-      if (body.byteLength > 512 * 1024) return c.text('Image too large', 413)
+    } catch { /* 抓取失败或超时，自动平滑降级，不抛出 502 */ }
 
-      const contentType = ct.includes('octet-stream') ? 'image/png' : ct
-      const response = new Response(body, {
-        headers: {
-          'Content-Type': contentType,
-          'Cache-Control': 'public, max-age=604800, s-maxage=604800',
-          'Access-Control-Allow-Origin': '*',
-          'X-Cache': 'MISS',
-        },
-      })
-      c.executionCtx.waitUntil(
-        cache.put(cacheKey, new Response(body, {
-          headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=604800, s-maxage=604800' },
-        }))
-      )
-      return response
-    } catch {
-      return c.text('Fetch failed', 502)
-    }
+    // ── 模式一抓取失败优雅降级：生成首字母 SVG 并缓存 24 小时，彻底避免 502 错误和重复死链重试 ──
+    const targetDomain = (() => {
+      try { return new URL(directUrl).hostname } catch { return 'icon' }
+    })()
+    const fallbackSvg = generateLetterSvg(targetDomain)
+    const svgBody = new TextEncoder().encode(fallbackSvg).buffer as ArrayBuffer
+    const fallbackResponse = new Response(svgBody, {
+      headers: {
+        'Content-Type': 'image/svg+xml',
+        'Cache-Control': 'public, max-age=86400, s-maxage=86400',
+        'Access-Control-Allow-Origin': '*',
+        'X-Cache': 'MISS',
+        'X-Icon-Source': 'generated-fallback',
+      },
+    })
+    c.executionCtx.waitUntil(
+      cache.put(cacheKey, new Response(svgBody, {
+        headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400, s-maxage=86400' },
+      }))
+    )
+    return fallbackResponse
   }
 
   // ═══ 模式二：按域名自动探测图标 ═══
@@ -323,16 +359,7 @@ api.get('/icon', async (c) => {
 
     // ═══ 兜底：首字母 SVG ═══
     if (!iconBody) {
-      const letter = domainLower.replace(/^www\./, '').charAt(0).toUpperCase()
-      const hue = (letter.charCodeAt(0) * 37) % 360
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:hsl(${hue},65%,55%)"/>
-          <stop offset="100%" style="stop-color:hsl(${(hue + 30) % 360},55%,45%)"/>
-        </linearGradient></defs>
-        <rect width="64" height="64" rx="14" fill="url(#g)"/>
-        <text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">${letter}</text>
-      </svg>`
+      const svg = generateLetterSvg(domainLower)
       iconBody = new TextEncoder().encode(svg).buffer as ArrayBuffer
       contentType = 'image/svg+xml'
       isGenerated = true
@@ -356,9 +383,7 @@ api.get('/icon', async (c) => {
     )
     return response
   } catch {
-    const letter = domainLower.replace(/^www\./, '').charAt(0).toUpperCase()
-    const hue = (letter.charCodeAt(0) * 37) % 360
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="hsl(${hue},60%,50%)"/><text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">${letter}</text></svg>`
+    const svg = generateLetterSvg(domainLower || 'icon')
     return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' } })
   }
 })
