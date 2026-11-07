@@ -499,15 +499,59 @@
     });
   }
 
-  // ── 点击上报 ──
+  // ── 点击上报（防误触 + 30 分钟同书签去重） ──
+  const VISIT_COOLDOWN_MS = 30 * 60 * 1000;
+  const VISIT_STORAGE_KEY = 'nav_visit_ts';
+  const memoryVisitMap = {};
+
+  function shouldRecordVisit(linkId) {
+    const now = Date.now();
+    try {
+      const raw = localStorage.getItem(VISIT_STORAGE_KEY);
+      const records = raw ? JSON.parse(raw) : {};
+      if (records[linkId] && (now - records[linkId] < VISIT_COOLDOWN_MS)) {
+        return false;
+      }
+      // 清理已过期的记录，防止存储膨胀
+      for (const k in records) {
+        if (now - records[k] >= VISIT_COOLDOWN_MS) delete records[k];
+      }
+      records[linkId] = now;
+      localStorage.setItem(VISIT_STORAGE_KEY, JSON.stringify(records));
+      return true;
+    } catch {
+      if (memoryVisitMap[linkId] && (now - memoryVisitMap[linkId] < VISIT_COOLDOWN_MS)) {
+        return false;
+      }
+      memoryVisitMap[linkId] = now;
+      return true;
+    }
+  }
+
+  function clearVisitCooldown(linkId) {
+    delete memoryVisitMap[linkId];
+    try {
+      const raw = localStorage.getItem(VISIT_STORAGE_KEY);
+      if (!raw) return;
+      const records = JSON.parse(raw);
+      delete records[linkId];
+      localStorage.setItem(VISIT_STORAGE_KEY, JSON.stringify(records));
+    } catch { /* ignore */ }
+  }
+
   document.addEventListener('click', function (e) {
+    if (sortMode || e.defaultPrevented) return;
+    if (e.target.closest('.edit-link-btn, .delete-link-btn')) return;
     const card = e.target.closest('.link-card');
     if (card && card.dataset.linkId) {
-      fetch('/api/visit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: parseInt(card.dataset.linkId) })
-      }).catch(() => {});
+      const id = parseInt(card.dataset.linkId, 10);
+      if (!isNaN(id) && shouldRecordVisit(id)) {
+        fetch('/api/visit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id })
+        }).catch(() => {});
+      }
     }
   });
 
@@ -1020,6 +1064,7 @@
       this.textContent = '⏳ 清除中...';
       try {
         await api('/api/link/reset-visits', { method: 'POST', body: JSON.stringify({ id: linkId }) });
+        clearVisitCooldown(linkId);
         toast('点击次数已清零', 'success');
         this.textContent = '✅ 已清除';
         await reloadData();
@@ -1034,6 +1079,7 @@
   async function deleteLink(id) {
     try {
       await api('/api/link/delete', { method: 'POST', body: JSON.stringify({ id }) });
+      clearVisitCooldown(id);
       toast('链接已删除', 'success');
       await reloadData();
     } catch (err) { toast('删除失败: ' + err.message, 'error'); }
