@@ -24,6 +24,7 @@ export type AppVariables = {
   isUser: boolean
   clientIP: string
   dao: import('./db/dao').DAO
+  rateLimited?: { blocked: boolean; remainingMs: number; attempts: number }
 }
 
 export type HonoEnv = {
@@ -137,6 +138,12 @@ export const ConfigUpdateSchema = z.object({
   path: ["value"]
 })
 
-export const VisitSchema = z.object({
+export const IdSchema = z.object({
   id: z.number().int().positive(),
+})
+
+export const VisitSchema = IdSchema
+
+export const TokenCreateSchema = z.object({
+  name: z.string().trim().min(1, '名称不能为空').max(100),
 })

@@ -2,6 +2,7 @@
  * src/routes/pages.tsx - 页面路由 (SSR)
  */
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import type { HonoEnv } from '../types'
 import { Layout } from '../components/Layout'
 import { Navbar } from '../components/Navbar'
@@ -68,7 +69,7 @@ pages.get('/manifest.json', async (c) => {
 })
 
 // [GET] 首页及管理员入口
-const renderApp = async (c: any) => {
+const renderApp = async (c: Context<HonoEnv>) => {
   const isUser = c.get('isUser')
   const isRoot = c.get('isRoot')
   const url = new URL(c.req.url)
@@ -99,7 +100,7 @@ const renderApp = async (c: any) => {
     // 构建安全的客户端状态
     const clientState = safeJsonStringify({
       data: ssrData,
-      config: { TITLE: title, BG_IMAGE: bgImage },
+      config: { title, bg_image: bgImage },
       isRoot,
       isAdmin: isUser,
     })
@@ -125,7 +126,7 @@ const renderApp = async (c: any) => {
       headers['Cache-Control'] = 'private, no-cache, no-store, must-revalidate'
     }
 
-    const response = c.html(
+    const response = await c.html(
       <Layout title={title} bgImage={bgImage}>
         <Navbar categories={ssrData} />
         <SearchBox />

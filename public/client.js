@@ -20,13 +20,26 @@
     if (token) headers['Authorization'] = 'Bearer ' + token;
     opts.credentials = 'include'; // 强制携带 Cookie
     const res = await fetch(path, { ...opts, headers });
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401 || res.status === 403 || res.status === 404) {
       const searchInput = $('#search-input');
       if (searchInput) searchInput.value = '';
       window.location.reload();
-      return;
+      throw new Error('登录已过期或无权限');
     }
-    return res.json();
+    const text = await res.text();
+    let data = {};
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch { throw new Error(res.ok ? '响应格式无效' : text); }
+    }
+    if (!res.ok || data.success === false) {
+      const msg = (typeof data.error === 'string' && data.error)
+        || data.error?.issues?.[0]?.message
+        || data.message
+        || ('请求失败 (' + res.status + ')');
+      throw new Error(msg);
+    }
+    return data;
   };
 
   function toast(msg, type = 'info') {
@@ -225,13 +238,21 @@
         }).join('');
       }
 
-      const activeSubItems = currentSubId && hasChildren
-        ? (cat.children.find(ch => ch.id === currentSubId)?.items || [])
-        : cat.items;
-      const emptyMsg = activeSubItems.length === 0 ? '<div class="text-center text-base-content/30 py-16 text-sm">暂无链接</div>' : '';
+      let emptyMsgs = '';
+      if (cat.items.length === 0) {
+        emptyMsgs += '<div class="text-center text-base-content/30 py-16 text-sm grid-empty-msg' +
+          (showParent ? '' : ' hidden') + '" data-sub-id="' + cat.id + '">暂无链接</div>';
+      }
+      if (hasChildren) {
+        emptyMsgs += cat.children.map(ch => {
+          if (ch.items.length > 0) return '';
+          return '<div id="empty-' + ch.id + '" class="text-center text-base-content/30 py-16 text-sm grid-empty-msg' +
+            (currentSubId === ch.id ? '' : ' hidden') + '" data-sub-id="' + ch.id + '">暂无链接</div>';
+        }).join('');
+      }
 
       return '<section class="cat-section ' + hidden + '" data-cat-id="' + cat.id + '">' +
-        gridsHtml + emptyMsg +
+        gridsHtml + emptyMsgs +
         '</section>';
     }).join('') +
       '<section id="search-results" class="hidden"><div id="search-results-grid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3"></div>' +
@@ -270,7 +291,7 @@
       '<div class="w-14 h-14 flex items-center justify-center flex-shrink-0">' +
       imgHtml +
       (originalIcon ? ' data-original-icon="' + escapeHtml(originalIcon) + '"' : '') +
-      ' onerror="var oi=this.getAttribute(\'data-original-icon\');if(oi){this.removeAttribute(\'data-original-icon\');this.src=oi;return;}var l=(\'' + escapeHtml(link.title) + '\').charAt(0).toUpperCase()||\'?\';var h=(l.charCodeAt(0)*37)%360;this.onerror=null;this.src=\'data:image/svg+xml,\'+encodeURIComponent(\'<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 64 64&quot;><rect width=&quot;64&quot; height=&quot;64&quot; rx=&quot;14&quot; fill=&quot;hsl(\'+h+\',60%,50%)&quot;/><text x=&quot;32&quot; y=&quot;32&quot; font-family=&quot;system-ui,sans-serif&quot; font-size=&quot;30&quot; font-weight=&quot;600&quot; fill=&quot;white&quot; text-anchor=&quot;middle&quot; dominant-baseline=&quot;central&quot;>\'+l+\'</text></svg>\')"></div>' +
+      ' onerror="var oi=this.getAttribute(\'data-original-icon\');if(oi){this.removeAttribute(\'data-original-icon\');this.src=oi;return;}var c=this.closest(\'.link-card\');var t=c?c.getAttribute(\'data-title\')||\'\':\'\';var l=(t.trim().charAt(0)||\'?\').toUpperCase();var h=(l.charCodeAt(0)*37)%360;var sl=l.replace(/\\x26/g,\'\\x26amp;\').replace(/\\x3c/g,\'\\x26lt;\').replace(/\\x3e/g,\'\\x26gt;\');this.onerror=null;this.src=\'data:image/svg+xml,\'+encodeURIComponent(\'<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 64 64&quot;><rect width=&quot;64&quot; height=&quot;64&quot; rx=&quot;14&quot; fill=&quot;hsl(\'+h+\',60%,50%)&quot;/><text x=&quot;32&quot; y=&quot;32&quot; font-family=&quot;system-ui,sans-serif&quot; font-size=&quot;30&quot; font-weight=&quot;600&quot; fill=&quot;white&quot; text-anchor=&quot;middle&quot; dominant-baseline=&quot;central&quot;>\'+sl+\'</text></svg>\')"></div>' +
       '<div class="text-xs font-medium text-center text-base-content/80 truncate w-full leading-tight">' +
       (link.is_private ? '🔒 ' : '') + escapeHtml(link.title) + '</div>' +
       '</a>';
@@ -661,9 +682,12 @@
   // ── Modal 控制 ──
   function openModal(title, bodyHtml) {
     const modal = $('#app-modal');
+    const modalBox = $('#app-modal .modal-box');
     const modalTitle = $('#modal-title');
     const modalBody = $('#modal-body');
     if (!modal || !modalTitle || !modalBody) return;
+    if (modalBox) modalBox.style.maxWidth = '';
+    modalTitle.style.display = '';
     modalTitle.textContent = title;
     modalBody.innerHTML = bodyHtml;
     modal.showModal();
@@ -750,65 +774,77 @@
   }
 
   function showAddCatModal() {
-    // 扁平化分类列表（含缩进）
+    // 分组树结构：顶级分类包裹其子分类，避免跨父级错误拖拽
     let catListHtml = '';
     state.data.forEach(cat => {
       if (cat.id === -1) return; // 跳过常用推荐
-      catListHtml += '<div class="cat-manage-item flex items-center gap-2 p-2 rounded-xl group" data-cat-id="' + cat.id + '">' +
-        '<span class="cursor-grab text-base-content/30 drag-handle">⠿</span>' +
+      catListHtml += '<div class="cat-group" data-group-id="' + cat.id + '">' +
+        '<div class="cat-manage-item flex items-center gap-2 p-2 rounded-xl group" data-cat-id="' + cat.id + '">' +
+        '<span class="cursor-grab text-base-content/30 cat-group-handle">⠿</span>' +
         '<span class="flex-1 text-sm font-medium truncate">' + (cat.is_private ? '🔒 ' : '') + escapeHtml(cat.title) + '</span>' +
         '<button type="button" class="btn btn-ghost btn-xs cat-edit-btn" data-cat-id="' + cat.id + '">✏️</button>' +
         '<button type="button" class="btn btn-ghost btn-xs cat-del-btn text-error/60" data-cat-id="' + cat.id + '">🗑️</button>' +
         '</div>';
       if (cat.children && cat.children.length > 0) {
+        catListHtml += '<div class="cat-sub-sort flex flex-col gap-1">';
         cat.children.forEach(ch => {
-          catListHtml += '<div class="cat-manage-item flex items-center gap-2 p-2 rounded-xl group ml-6" data-cat-id="' + ch.id + '">' +
-            '<span class="cursor-grab text-base-content/30 drag-handle">⠿</span>' +
+          catListHtml += '<div class="cat-manage-item cat-sub-item flex items-center gap-2 p-2 rounded-xl group ml-6" data-cat-id="' + ch.id + '">' +
+            '<span class="cursor-grab text-base-content/30 cat-sub-handle">⠿</span>' +
             '<span class="text-base-content/30 text-xs mr-1">└</span>' +
             '<span class="flex-1 text-sm font-medium truncate">' + (ch.is_private ? '🔒 ' : '') + escapeHtml(ch.title) + '</span>' +
             '<button type="button" class="btn btn-ghost btn-xs cat-edit-btn" data-cat-id="' + ch.id + '">✏️</button>' +
             '<button type="button" class="btn btn-ghost btn-xs cat-del-btn text-error/60" data-cat-id="' + ch.id + '">🗑️</button>' +
             '</div>';
         });
+        catListHtml += '</div>';
       }
+      catListHtml += '</div>';
     });
-
-    // 顶级分类选项（用于选择父分类）
-    const parentOptions = '<option value="">无（顶级分类）</option>' +
-      state.data.filter(c => c.id !== -1).map(c => '<option value="' + c.id + '">' + escapeHtml(c.title) + '</option>').join('');
 
     openModal('分类管理', '<div class="flex flex-col gap-3">' +
       '<p class="text-xs text-base-content/40">拖拽调整顺序 · 点击编辑或删除</p>' +
       '<div id="cat-sort-list" class="flex flex-col gap-2">' + catListHtml + '</div>' +
       '<div class="divider text-xs text-base-content/30 my-1">添加新分类</div>' +
-      '<form id="cat-form" class="flex gap-2 items-center">' +
-      '<input type="text" name="title" class="input input-bordered input-sm flex-1 min-w-0" required placeholder="分类名称">' +
+      '<form id="cat-form" class="flex flex-wrap gap-2 items-center">' +
+      '<input type="text" name="title" class="input input-bordered input-sm flex-1 min-w-[120px]" required placeholder="分类名称">' +
       '<select name="parent_id" class="select select-bordered select-sm w-auto max-w-[140px]">' +
       '<option value="">顶级分类</option>' +
       state.data.filter(c => c.id !== -1).map(c => '<option value="' + c.id + '">↳ ' + escapeHtml(c.title) + '</option>').join('') +
       '</select>' +
-      '<button type="submit" class="btn btn-primary btn-sm">添加</button>' +
+      '<label class="flex items-center gap-1 cursor-pointer shrink-0"><input type="checkbox" name="is_private" class="toggle toggle-xs"><span class="text-xs">🔒 私有</span></label>' +
+      '<button type="submit" class="btn btn-primary btn-sm shrink-0">添加</button>' +
       '</form></div>');
 
-    // 拖拽排序
+    // 拖拽排序（顶级与各自子分类组内独立排序）
     if (typeof Sortable !== 'undefined') {
       const sortList = $('#cat-sort-list');
       if (sortList) {
+        const saveCatOrder = async function () {
+          const items = Array.from(sortList.querySelectorAll('.cat-manage-item[data-cat-id]')).map((el, i) => ({
+            id: parseInt(el.dataset.catId),
+            sort_order: i,
+          })).filter(x => !isNaN(x.id));
+          try {
+            await api('/api/category/reorder', { method: 'POST', body: JSON.stringify(items) });
+            toast('分类顺序已保存', 'success');
+            await reloadData();
+          } catch (err) { toast('排序失败', 'error'); }
+        };
         new Sortable(sortList, {
           animation: 200,
-          handle: '.drag-handle',
+          draggable: '.cat-group',
+          handle: '.cat-group-handle',
           ghostClass: 'opacity-30',
-          onEnd: async function () {
-            const items = Array.from(sortList.children).map((el, i) => ({
-              id: parseInt(el.dataset.catId),
-              sort_order: i,
-            })).filter(x => !isNaN(x.id));
-            try {
-              await api('/api/category/reorder', { method: 'POST', body: JSON.stringify(items) });
-              toast('分类顺序已保存', 'success');
-              await reloadData();
-            } catch (err) { toast('排序失败', 'error'); }
-          }
+          onEnd: saveCatOrder
+        });
+        sortList.querySelectorAll('.cat-sub-sort').forEach(subList => {
+          new Sortable(subList, {
+            animation: 200,
+            draggable: '.cat-sub-item',
+            handle: '.cat-sub-handle',
+            ghostClass: 'opacity-30',
+            onEnd: saveCatOrder
+          });
         });
       }
     }
@@ -833,6 +869,7 @@
             await api('/api/category/delete', { method: 'POST', body: JSON.stringify({ id: catId }) });
             toast('分类已删除', 'success');
             currentCatIdx = 0;
+            currentSubId = null;
             await reloadData();
             showAddCatModal(); // 刷新管理面板
           } catch (err) { toast('删除失败: ' + err.message, 'error'); }
@@ -843,7 +880,10 @@
     // 添加新分类
     $('#cat-form')?.addEventListener('submit', async function (e) {
       e.preventDefault();
-      const data = { title: e.target.title.value, is_private: 0 };
+      const data = {
+        title: e.target.title.value,
+        is_private: e.target.is_private?.checked ? 1 : 0,
+      };
       const parentId = e.target.parent_id.value;
       if (parentId) data.parent_id = parseInt(parentId);
       try {
@@ -867,10 +907,11 @@
     return null;
   }
 
-  // 获取所有链接（含子分类）
+  // 获取所有链接（含子分类，跳过虚拟分类 -1）
   function getAllLinks() {
     const links = [];
     state.data.forEach(cat => {
+      if (cat.id === -1) return;
       links.push(...cat.items);
       if (cat.children) cat.children.forEach(ch => links.push(...ch.items));
     });
@@ -963,13 +1004,16 @@
   });
 
   function showEditCatModal(cat) {
-    const parentOptions = '<option value="">无（顶级分类）</option>' +
-      state.data.filter(c => c.id !== -1 && c.id !== cat.id).map(c => '<option value="' + c.id + '" ' + (cat.parent_id === c.id ? 'selected' : '') + '>↳ ' + escapeHtml(c.title) + '</option>').join('');
+    const hasChildren = cat.children && cat.children.length > 0;
+    const parentOptions = hasChildren
+      ? '<option value="">无（含子分类，不可设为子分类）</option>'
+      : '<option value="">无（顶级分类）</option>' +
+        state.data.filter(c => c.id !== -1 && c.id !== cat.id).map(c => '<option value="' + c.id + '" ' + (cat.parent_id === c.id ? 'selected' : '') + '>↳ ' + escapeHtml(c.title) + '</option>').join('');
 
     openModal('编辑分类', '<form id="edit-cat-form" class="flex flex-col gap-3">' +
       '<input type="hidden" name="id" value="' + cat.id + '">' +
       '<label class="form-control w-full"><div class="label"><span class="label-text">分类名称</span></div><input type="text" name="title" class="input input-bordered w-full" required value="' + escapeHtml(cat.title) + '"></label>' +
-      '<label class="form-control w-full"><div class="label"><span class="label-text">所属父分类</span></div><select name="parent_id" class="select select-bordered w-full">' + parentOptions + '</select></label>' +
+      '<label class="form-control w-full"><div class="label"><span class="label-text">所属父分类</span></div><select name="parent_id" class="select select-bordered w-full"' + (hasChildren ? ' disabled' : '') + '>' + parentOptions + '</select></label>' +
       '<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" name="is_private" class="toggle toggle-sm" ' + (cat.is_private ? 'checked' : '') + '><span class="label-text">🔒 私有分类</span></label>' +
       '<div class="modal-action flex gap-2">' +
       '<button type="button" id="btn-delete-cat" class="btn btn-error btn-outline">删除分类</button>' +
@@ -981,7 +1025,7 @@
         id: parseInt(e.target.id.value),
         title: e.target.title.value,
         is_private: e.target.is_private?.checked ? 1 : 0,
-        parent_id: e.target.parent_id.value ? parseInt(e.target.parent_id.value) : null,
+        parent_id: (!hasChildren && e.target.parent_id.value) ? parseInt(e.target.parent_id.value) : null,
       };
       try {
         await api('/api/category/update', { method: 'POST', body: JSON.stringify(data) });
@@ -997,6 +1041,7 @@
           $('#app-modal')?.close();
           toast('分类已删除', 'success');
           currentCatIdx = 0;
+          currentSubId = null;
           await reloadData();
         } catch (err) { toast('删除失败: ' + err.message, 'error'); }
       });
@@ -1087,6 +1132,11 @@
 
   // ── SortableJS ──
   function toggleSortMode() {
+    const activeCat = state.data[currentCatIdx];
+    if (!sortMode && activeCat && activeCat.id === -1) {
+      toast('「常用推荐」为自动汇总分类，请切换到具体分类后再排序', 'info');
+      return;
+    }
     sortMode = !sortMode;
     const btn = $('#btn-toggle-sort');
     if (btn) btn.classList.toggle('dock-active', sortMode);
@@ -1098,6 +1148,7 @@
     if (typeof Sortable === 'undefined') return;
     sortableInstances = [];
     $$('.cat-section:not(.hidden) [id^="grid-"]').forEach(grid => {
+      if (grid.id === 'grid--1') return;
       const s = new Sortable(grid, {
         animation: 200,
         ghostClass: 'opacity-30',
@@ -1151,8 +1202,11 @@
           '</tr></thead><tbody>';
 
         res.logs.forEach(function (log) {
-          const d = new Date(log.created_at);
-          const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+          const ts = typeof log.created_at === 'number' ? log.created_at : new Date(log.created_at).getTime();
+          const d = new Date(ts + 8 * 3600 * 1000);
+          const dateStr = Number.isNaN(d.getTime())
+            ? escapeHtml(String(log.created_at || ''))
+            : d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0') + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0') + ':' + String(d.getUTCSeconds()).padStart(2, '0');
 
           html += '<tr class="border-b border-base-content/5 hover:bg-base-content/[0.02] transition-colors">' +
             '<td class="py-3 px-3 text-xs text-base-content/80">' + dateStr + '</td>' +
@@ -1233,7 +1287,7 @@
 
   // ── 设置 ──
   function showSettings() {
-    const currentBg = state.config?.bg_image || '';
+    const currentBg = state.config?.bg_image ?? state.config?.BG_IMAGE ?? '';
     openModal('⚙️ 设置', '<div class="flex flex-col gap-4">' +
       // 背景图片设置
       '<div class="flex flex-col gap-2">' +
@@ -1345,16 +1399,29 @@
     });
   }
 
+  function sanitizeCssUrl(raw) {
+    const u = String(raw || '').trim();
+    if (!u) return '';
+    try {
+      const parsed = new URL(u, window.location.origin);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+      return u.replace(/['"\\()\s]/g, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase());
+    } catch {
+      return '';
+    }
+  }
+
   // 前端实时切换背景
   function applyBackground(url) {
+    const safeUrl = sanitizeCssUrl(url);
     let bgEl = document.querySelector('.bg-image-layer');
-    if (url) {
+    if (safeUrl) {
       if (!bgEl) {
         bgEl = document.createElement('div');
         bgEl.className = 'bg-image-layer fixed inset-0 z-[-2] bg-cover bg-center bg-no-repeat pointer-events-none';
         document.body.insertBefore(bgEl, document.body.firstChild);
       }
-      bgEl.style.backgroundImage = "url('" + url + "')";
+      bgEl.style.backgroundImage = "url('" + safeUrl + "')";
       document.body.classList.remove('bg-base-300');
       document.body.classList.add('bg-transparent');
     } else {
@@ -1370,6 +1437,11 @@
       const fullData = await api('/api/data');
       state.data = fullData.nav;
       if (currentCatIdx >= state.data.length) currentCatIdx = 0;
+      if (currentSubId != null) {
+        const curCat = state.data[currentCatIdx];
+        const hasSub = curCat && curCat.children && curCat.children.some(ch => ch.id === currentSubId);
+        if (!hasSub) currentSubId = null;
+      }
       renderAll();
       if (sortMode) {
         disableSort();

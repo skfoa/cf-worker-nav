@@ -172,9 +172,37 @@ export class DAO {
   // 分类管理
   // ===========================================
 
+  private async assertValidParentCategory(parentId: number, childCategoryId?: number): Promise<void> {
+    if (childCategoryId !== undefined && parentId === childCategoryId) {
+      throw new Error('不能将分类自身设为父分类')
+    }
+    const parent = await this.db
+      .prepare('SELECT id, parent_id FROM categories WHERE id = ?')
+      .bind(parentId)
+      .first<{ id: number; parent_id: number | null }>()
+    if (!parent) {
+      throw new Error('目标父分类不存在')
+    }
+    if (parent.parent_id) {
+      throw new Error('仅支持两级分类，不可将子分类设为父分类')
+    }
+    if (childCategoryId !== undefined) {
+      const hasChildren = await this.db
+        .prepare('SELECT 1 FROM categories WHERE parent_id = ? LIMIT 1')
+        .bind(childCategoryId)
+        .first()
+      if (hasChildren) {
+        throw new Error('含子分类的顶级分类不可设为子分类')
+      }
+    }
+  }
+
   async addCategory(data: { title: string; is_private?: number; parent_id?: number }): Promise<D1Result> {
     const privateVal = data.is_private ? 1 : 0
     const parentId = data.parent_id || null
+    if (parentId !== null) {
+      await this.assertValidParentCategory(parentId)
+    }
     return await this.db
       .prepare(
         `INSERT INTO categories (title, sort_order, is_private, parent_id, created_at, updated_at)
@@ -189,6 +217,9 @@ export class DAO {
     const hasUpdate = fields.some(f => data[f] !== undefined)
     if (!hasUpdate) {
       return { success: true, meta: { changes: 0 } } as unknown as D1Result
+    }
+    if (data.parent_id !== undefined && data.parent_id !== null) {
+      await this.assertValidParentCategory(data.parent_id, data.id)
     }
     let sql = 'UPDATE categories SET updated_at = ?'
     const args: unknown[] = [this.now()]
@@ -259,6 +290,26 @@ export class DAO {
     const fields = ['category_id', 'title', 'url', 'description', 'icon', 'is_private'] as const
     const hasUpdate = fields.some(f => data[f] !== undefined)
     if (!hasUpdate) return { success: true, meta: { changes: 0 } } as unknown as D1Result
+
+    // 更新 URL 或移动分类时执行同分类去重检查
+    if (data.category_id !== undefined || data.url !== undefined) {
+      const current = await this.db
+        .prepare('SELECT category_id, url FROM links WHERE id = ?')
+        .bind(data.id)
+        .first<{ category_id: number; url: string }>()
+      if (!current) {
+        throw new Error('链接不存在')
+      }
+      const nextCatId = data.category_id ?? current.category_id
+      const nextUrl = data.url ?? current.url
+      const existing = await this.db
+        .prepare('SELECT id FROM links WHERE category_id = ? AND url = ? AND id != ?')
+        .bind(nextCatId, nextUrl, data.id)
+        .first<{ id: number }>()
+      if (existing) {
+        throw new Error('该分类下已存在相同 URL 的链接')
+      }
+    }
 
     let sql = 'UPDATE links SET updated_at = ?'
     const args: unknown[] = [this.now()]
@@ -409,9 +460,14 @@ export class DAO {
             skippedUrls.push(`${url} (已存在)`)
             continue
           }
+          const itemTitle = (item.name || item.title || '').trim()
+          if (!itemTitle) {
+            skippedCount++
+            skippedUrls.push(`${url} (标题为空)`)
+            continue
+          }
           existingLinkSet.add(dupKey)
 
-          const itemTitle = item.name || item.title || ''
           const isPriv = item.is_private ? 1 : 0
           linkStmts.push(
             this.db
@@ -477,9 +533,13 @@ export class DAO {
     const { MAX_ATTEMPTS, WINDOW_MS, LOCKOUT_MS } = DAO.RATE_LIMIT
     try {
       const record = await this.db
-        .prepare('SELECT attempts, first_attempt FROM login_attempts WHERE ip = ?')
+        .prepare('SELECT attempts, first_attempt, locked_until FROM login_attempts WHERE ip = ?')
         .bind(ip)
-        .first<{ attempts: number; first_attempt: number }>()
+        .first<{ attempts: number; first_attempt: number; locked_until: number }>()
+
+      if (record && record.locked_until > n) {
+        return { locked: true, attempts: record.attempts, lockoutMs: record.locked_until - n }
+      }
 
       let newAttempts = 1
       let firstAttempt = n

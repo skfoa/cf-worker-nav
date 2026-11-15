@@ -3,6 +3,8 @@
  * Web Crypto API 基于 HMAC-SHA256 的无状态 Session 签名/验签
  */
 
+import { safeCompare } from './security'
+
 // 签发 Token
 export async function signSession(payload: string, secret: string): Promise<string> {
   const enc = new TextEncoder()
@@ -34,7 +36,7 @@ export async function verifySession(token: string, secret: string): Promise<stri
   // 重新签名并对比
   const expectedToken = await signSession(payload, secret)
   
-  if (token === expectedToken) {
+  if (await safeCompare(token, expectedToken)) {
     return payload
   }
   return null

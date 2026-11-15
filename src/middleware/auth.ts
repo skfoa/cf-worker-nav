@@ -61,9 +61,15 @@ export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
 
   // 1. Header Authentication (API Token / Legacy Password)
   if (authHeader) {
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim()
-    isRoot = await safeCompare(token, c.env.PASSWORD!)
-    isUser = isRoot || await dao.validateToken(token)
+    // 防止已锁定的 IP 通过 Authorization 请求头绕过登录限流继续爆破或提前解封
+    const rateCheck = await dao.checkRateLimit(clientIP)
+    if (rateCheck.blocked) {
+      c.set('rateLimited', rateCheck)
+    } else {
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim()
+      isRoot = await safeCompare(token, c.env.PASSWORD!)
+      isUser = isRoot || await dao.validateToken(token)
+    }
   } 
   // 2. Cookie Authentication
   else if (cookieToken) {
@@ -111,6 +117,16 @@ export const requireAuth = createMiddleware<HonoEnv>(async (c, next) => {
   const isUser = c.get('isUser')
   const dao = c.get('dao')
   const clientIP = c.get('clientIP')
+
+  const rateLimited = c.get('rateLimited')
+  if (rateLimited?.blocked) {
+    const lockMin = Math.ceil(rateLimited.remainingMs / 60000)
+    return c.json({
+      error: `Account locked due to too many failed attempts. Try again in ${lockMin} minutes.`,
+      blocked: true,
+      lockoutMs: rateLimited.remainingMs,
+    }, 429)
+  }
 
   if (!isUser) {
     const authHeader = c.req.header('Authorization')

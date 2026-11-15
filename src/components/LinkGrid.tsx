@@ -26,7 +26,7 @@ export const LinkGrid: FC<LinkGridProps> = ({ categories, isAdmin }) => (
             <LinkCard link={link} isAdmin={isAdmin} lazy={idx !== 0} />
           ))}
         </div>
-        {(!cat.children || cat.children.length === 0) && cat.items.length === 0 && (
+        {cat.items.length === 0 && (
           <div class="text-center text-base-content/30 py-16 text-sm grid-empty-msg" data-sub-id={cat.id}>
             暂无链接
           </div>

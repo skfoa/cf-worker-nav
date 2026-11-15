@@ -3,6 +3,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      init_db:
+        description: "D1 初始化模式 (auto: 仅全新空库自动初始化 / skip: 跳过)"
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - skip
 
 jobs:
   deploy:
@@ -46,8 +55,30 @@ jobs:
           TOKEN_SALT: ${{ secrets.TOKEN_SALT }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
 
-      - name: Initialize D1 Database
+      - name: Check D1 Initialization Status
         if: github.event_name == 'workflow_dispatch'
+        id: d1_check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "${{ github.event.inputs.init_db }}" = "skip" ]; then
+            echo "should_init=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 已选择跳过 D1 初始化"
+            exit 0
+          fi
+          OUT=$(npx wrangler d1 execute nav-db --remote --yes --json --command "SELECT count(*) AS cnt FROM sqlite_master WHERE type='table' AND name='categories';" 2>/dev/null || echo "")
+          CNT=$(node -e "try { const d = JSON.parse(process.argv[1]); const ok = Array.isArray(d) && d[0]?.success === true && Array.isArray(d[0]?.results) && d[0].results.length === 1; console.log(ok ? String(d[0].results[0].cnt) : ''); } catch { console.log(''); }" "$OUT")
+          if [ "$CNT" = "0" ]; then
+            echo "should_init=true" >> "$GITHUB_OUTPUT"
+            echo "📦 检测到全新空数据库，将执行 0001_init.sql 初始化"
+          else
+            echo "should_init=false" >> "$GITHUB_OUTPUT"
+            echo "🛡️ 数据库已初始化或状态未知（cnt='$CNT'），跳过 0001_init.sql 以保护现有数据"
+          fi
+
+      - name: Initialize D1 Database
+        if: github.event_name == 'workflow_dispatch' && steps.d1_check.outputs.should_init == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -9,6 +9,7 @@ import {
   LinkCreateSchema, LinkUpdateSchema,
   CategoryCreateSchema, CategoryUpdateSchema,
   ReorderSchema, ConfigUpdateSchema,
+  IdSchema, VisitSchema, TokenCreateSchema,
 } from '../types'
 import { requireAuth, requireRoot, getCookieSecret } from '../middleware/auth'
 import { signSession } from '../utils/session'
@@ -77,14 +78,17 @@ api.post('/visit', async (c) => {
     const origin = c.req.header('Origin') || ''
     const url = new URL(c.req.url)
     const allowedOrigin = c.env.ALLOWED_ORIGIN || url.origin
-    const isValid = referer.startsWith(allowedOrigin) || referer.startsWith(url.origin) ||
+    let refererOrigin = ''
+    try { if (referer) refererOrigin = new URL(referer).origin } catch { /* invalid referer */ }
+    const isValid = refererOrigin === allowedOrigin || refererOrigin === url.origin ||
       origin === allowedOrigin || origin === url.origin
     if (!isValid) return c.json({ status: 'ok' })
 
-    const body = await c.req.json().catch(() => ({})) as { id?: number }
-    if (body.id) {
+    const rawBody = await c.req.json().catch(() => null)
+    const parsed = VisitSchema.safeParse(rawBody)
+    if (parsed.success) {
       const dao = c.get('dao')
-      await dao.incrementVisit(body.id)
+      await dao.incrementVisit(parsed.data.id)
     }
     return c.json({ status: 'ok' })
   } catch {
@@ -147,10 +151,11 @@ api.get('/icon', async (c) => {
           const body = await res.arrayBuffer()
           if (body.byteLength > 0 && body.byteLength <= 512 * 1024) {
             const contentType = ct.includes('octet-stream') ? 'image/png' : ct
+            const cacheControl = 'public, max-age=604800, s-maxage=604800, immutable'
             const response = new Response(body, {
               headers: {
                 'Content-Type': contentType,
-                'Cache-Control': 'public, max-age=604800, s-maxage=604800',
+                'Cache-Control': cacheControl,
                 'Access-Control-Allow-Origin': '*',
                 'X-Cache': 'MISS',
                 'X-Icon-Source': 'direct-fetched',
@@ -158,7 +163,12 @@ api.get('/icon', async (c) => {
             })
             c.executionCtx.waitUntil(
               cache.put(cacheKey, new Response(body, {
-                headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=604800, s-maxage=604800' },
+                headers: {
+                  'Content-Type': contentType,
+                  'Cache-Control': cacheControl,
+                  'Access-Control-Allow-Origin': '*',
+                  'X-Icon-Source': 'direct-fetched',
+                },
               }))
             )
             return response
@@ -365,20 +375,29 @@ api.get('/icon', async (c) => {
       isGenerated = true
     }
 
-    // 返回并缓存（生成图标缓存 24h，真实图标缓存 7 天）
+    // 返回并缓存（生成图标缓存 24h，真实图标缓存 7 天 + immutable）
     const ttl = isGenerated ? 86400 : 604800
+    const cacheControl = isGenerated
+      ? `public, max-age=${ttl}, s-maxage=${ttl}`
+      : `public, max-age=${ttl}, s-maxage=${ttl}, immutable`
+    const iconSource = isGenerated ? 'generated' : 'fetched'
     const response = new Response(iconBody, {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': `public, max-age=${ttl}, s-maxage=${ttl}`,
+        'Cache-Control': cacheControl,
         'Access-Control-Allow-Origin': '*',
         'X-Cache': 'MISS',
-        'X-Icon-Source': isGenerated ? 'generated' : 'fetched',
+        'X-Icon-Source': iconSource,
       },
     })
     c.executionCtx.waitUntil(
       cache.put(cacheKey, new Response(iconBody, {
-        headers: { 'Content-Type': contentType, 'Cache-Control': `public, max-age=${ttl}, s-maxage=${ttl}` },
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': cacheControl,
+          'Access-Control-Allow-Origin': '*',
+          'X-Icon-Source': iconSource,
+        },
       }))
     )
     return response
@@ -423,7 +442,10 @@ api.post('/auth/login', async (c) => {
     return c.json({ error: `Too many failed attempts. Try again in ${remainingMin} minutes.`, blocked: true, remainingMs: rateCheck.remainingMs }, 429)
   }
 
-  const { password } = await c.req.json().catch(() => ({ password: '' }))
+  const rawBody = await c.req.json().catch(() => null)
+  const password = rawBody && typeof rawBody === 'object' && typeof (rawBody as { password?: unknown }).password === 'string'
+    ? (rawBody as { password: string }).password
+    : ''
   if (!password || !c.env.PASSWORD) {
     await dao.recordFailedAttempt(clientIP)
     return c.json({ error: 'Unauthorized' }, 401)
@@ -487,9 +509,9 @@ function purgePublicCache(c: any) {
   } catch { /* ignore */ }
 }
 
-// ── Category CRUD ──
+// ── Category CRUD (仅限 Root) ──
 
-api.post('/category', requireAuth, zValidator('json', CategoryCreateSchema), async (c) => {
+api.post('/category', requireAuth, requireRoot, zValidator('json', CategoryCreateSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
   const res = await dao.addCategory(data)
@@ -497,7 +519,7 @@ api.post('/category', requireAuth, zValidator('json', CategoryCreateSchema), asy
   return c.json(res)
 })
 
-api.post('/category/update', requireAuth, zValidator('json', CategoryUpdateSchema), async (c) => {
+api.post('/category/update', requireAuth, requireRoot, zValidator('json', CategoryUpdateSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
   const res = await dao.updateCategory(data)
@@ -505,15 +527,15 @@ api.post('/category/update', requireAuth, zValidator('json', CategoryUpdateSchem
   return c.json(res)
 })
 
-api.post('/category/delete', requireAuth, async (c) => {
+api.post('/category/delete', requireAuth, requireRoot, zValidator('json', IdSchema), async (c) => {
   const dao = c.get('dao')
-  const body = await c.req.json() as { id: number }
-  const res = await dao.deleteCategory(body.id)
+  const { id } = c.req.valid('json')
+  const res = await dao.deleteCategory(id)
   purgePublicCache(c)
   return c.json(res)
 })
 
-api.post('/category/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
+api.post('/category/reorder', requireAuth, requireRoot, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
   const res = await dao.batchUpdateCategoriesOrder(data)
@@ -521,9 +543,9 @@ api.post('/category/reorder', requireAuth, zValidator('json', ReorderSchema), as
   return c.json(res)
 })
 
-// ── Link CRUD ──
+// ── Link CRUD (仅限 Root) ──
 
-api.post('/link', requireAuth, zValidator('json', LinkCreateSchema), async (c) => {
+api.post('/link', requireAuth, requireRoot, zValidator('json', LinkCreateSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
   const res = await dao.addLink(data)
@@ -531,7 +553,7 @@ api.post('/link', requireAuth, zValidator('json', LinkCreateSchema), async (c) =
   return c.json(res)
 })
 
-api.post('/link/update', requireAuth, zValidator('json', LinkUpdateSchema), async (c) => {
+api.post('/link/update', requireAuth, requireRoot, zValidator('json', LinkUpdateSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
   const res = await dao.updateLink(data)
@@ -539,22 +561,21 @@ api.post('/link/update', requireAuth, zValidator('json', LinkUpdateSchema), asyn
   return c.json(res)
 })
 
-api.post('/link/delete', requireAuth, async (c) => {
+api.post('/link/delete', requireAuth, requireRoot, zValidator('json', IdSchema), async (c) => {
   const dao = c.get('dao')
-  const body = await c.req.json() as { id: number }
-  const res = await dao.deleteLink(body.id)
+  const { id } = c.req.valid('json')
+  const res = await dao.deleteLink(id)
   purgePublicCache(c)
   return c.json(res)
 })
 
-api.post('/link/reset-visits', requireAuth, async (c) => {
+api.post('/link/reset-visits', requireAuth, requireRoot, zValidator('json', IdSchema), async (c) => {
   const dao = c.get('dao')
-  const body = await c.req.json() as { id: number }
-  if (!body.id) return c.json({ error: 'Missing id' }, 400)
-  return c.json(await dao.resetVisits(body.id))
+  const { id } = c.req.valid('json')
+  return c.json(await dao.resetVisits(id))
 })
 
-api.post('/link/reorder', requireAuth, zValidator('json', ReorderSchema), async (c) => {
+api.post('/link/reorder', requireAuth, requireRoot, zValidator('json', ReorderSchema), async (c) => {
   const dao = c.get('dao')
   const data = c.req.valid('json')
   const res = await dao.batchUpdateLinksOrder(data)
@@ -643,22 +664,22 @@ api.get('/token/list', requireAuth, requireRoot, async (c) => {
   return c.json(await dao.listTokens())
 })
 
-api.post('/token/create', requireAuth, requireRoot, async (c) => {
+api.post('/token/create', requireAuth, requireRoot, zValidator('json', TokenCreateSchema), async (c) => {
   const dao = c.get('dao')
-  const body = await c.req.json() as { name: string }
-  return c.json(await dao.createToken(body.name))
+  const { name } = c.req.valid('json')
+  return c.json(await dao.createToken(name))
 })
 
-api.post('/token/delete', requireAuth, requireRoot, async (c) => {
+api.post('/token/delete', requireAuth, requireRoot, zValidator('json', IdSchema), async (c) => {
   const dao = c.get('dao')
-  const body = await c.req.json() as { id: number }
-  return c.json(await dao.deleteToken(body.id))
+  const { id } = c.req.valid('json')
+  return c.json(await dao.deleteToken(id))
 })
 
 api.get('/logs', requireAuth, requireRoot, async (c) => {
   const dao = c.get('dao')
-  const page = parseInt(c.req.query('page') || '1') || 1
-  const limit = parseInt(c.req.query('limit') || '20') || 20
+  const page = Math.max(1, parseInt(c.req.query('page') || '1') || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '20') || 20))
   return c.json(await dao.getLogs(page, limit))
 })
 
