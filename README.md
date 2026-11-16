@@ -6,9 +6,7 @@
 ![Hono](https://img.shields.io/badge/Hono-E36002?style=for-the-badge&logo=hono&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
 
-这是一个**极简、极速、极度安全**的个人导航站。基于 `Hono` 边缘计算框架与 `Tailwind CSS v4` 构建，完全运行在 Cloudflare 的 Serverless 边缘网络上。
-
-它不仅拥有现代化的毛玻璃 UI 设计，更在底层融入了**"零信任" (Zero-Trust) 安全理念**，是为您量身打造的下一代纯净无界导航引擎。
+一个运行在 Cloudflare Workers + D1 上的个人书签导航站，基于 `Hono`、`TypeScript` 与 `Tailwind CSS v4` + `DaisyUI v5` 构建。支持公开访问、私有书签隔离、边缘缓存与基础管理后台。
 
 <div align="center">
   <img width="1853" height="915" alt="image" src="https://github.com/user-attachments/assets/3aae9fbc-b383-4fbf-8717-91513233e81a" />
@@ -16,189 +14,171 @@
 
 ---
 
-## ✨ 核心特性 (Features)
+## ✨ 功能特性
 
-### 🚀 极致的性能与架构
-- ⚡ **Serverless 边缘部署** — 依托 Cloudflare 全球数百个节点，访问请求就近渲染，毫秒级响应。告别传统服务器，**永久免费，零维护成本**。
-- 💾 **D1 原生边缘数据库** — 彻底抛弃臃肿的 MySQL/Redis，采用 Cloudflare 原生 SQLite 边缘数据库，支持强一致性事务，数据永不丢失。
-- ⚡ **智能边缘缓存 (Edge Caching)** — 依托 Cloudflare Cache API 对公开页面实施边缘缓存（TTL 5 分钟），重复访问 **0 次 D1 读查询**，首字节响应从 ~200ms+ 降至 <20ms。
-- 🔄 **写时缓存秒级失效 (Auto-Purge)** — 管理员在后台进行任何书签、分类或系统配置修改后，系统异步清除边缘缓存，访客即刻看到最新内容。
-- 🎯 **分类按需懒加载 (Lazy Loading)** — 仅当前可见分类发起图标请求，隐藏分类采用 `data-src` 懒加载，在用户切换 Tab 时按需载入，冷启动网络请求数直降 70%~80%。
-- 📉 **请求数与算力极致压榨** — 消除 D1 重复查询，静态 `favicon.ico` 零 Worker 消耗，图标代理跳过 DAO/鉴权中间件，完美贴合 Cloudflare 免费配额。
-- 📦 **自动化深度优化** — 构建时自动剔除无用 CSS 样式，并对 JS 进行混淆压缩，配合全球 CDN 缓存，打造极致首屏加载体验。
-- 📱 **全平台 PWA 支持** — 支持添加到手机或电脑的主屏幕，沉浸式全屏体验，离线可用。
+### ⚙️ 架构与缓存设计
+- **Cloudflare Workers + D1**：无独立服务器运维成本；Workers Free 计划提供每天 `100,000` 次免费请求额度，D1 免费额度为每天 `5,000,000` 行读取与 `100,000` 行写入，个人与小团队日常使用足够覆盖。
+- **访客首页与 Manifest 边缘缓存**：未登录访客访问 `/`（TTL 5 分钟，`s-maxage=300`）与 `/manifest.json`（TTL 1 小时）优先命中 `caches.default`；命中缓存时不重复查询 D1。
+- **静态资源版本化与长缓存**：构建时为 `public/output.css` 和 `public/client.min.js` 生成短哈希指纹并自动注入 `?v=<hash>`，通过 [public/_headers](public/_headers) 下发 `Cache-Control: public, max-age=31536000, immutable`；配合 [wrangler.toml.example](wrangler.toml.example) 中的 `assets = { directory = "public" }`（`Assets-First` 路由）与静态 `public/favicon.ico`，静态资源请求不触发 Worker 调用，发版后新哈希 URL 即时生效。
+- **写操作自动清理缓存**：新增、编辑、删除、排序、批量操作或导入配置后，自动清除 `/`、`/api/config` 与 `/manifest.json` 的边缘缓存。
+- **图标懒加载与兜底**：首屏仅加载当前可见分类的图标，未激活分类通过 `data-src` 在切换时再请求；全局捕获阶段图片错误监听搭配首屏初始化检查，加载失败时回退为首字母 SVG，移除每张卡片重复的内联 `onerror` 属性。
+- **图标代理服务（`GET /api/icon`）**：按「DuckDuckGo → 网页 `<head>` 与 Manifest 解析 → 常见路径探测（`/favicon.ico`、`/favicon.svg`、`/favicon.png`、`/apple-touch-icon.png`）→ 首字母 SVG」顺序降级获取（5 秒超时、512KB 上限），并跳过 DAO/鉴权中间件以降低 CPU 消耗；Worker 内使用 `caches.default` 缓存（成功抓取浏览器缓存 7 天，兜底 SVG 缓存 24 小时）。
+- **添加到主屏幕（Manifest）**：提供 `/manifest.json` 支持添加到桌面以独立窗口打开；为避免同 URL（`/`）在登录态与访客态之间出现 HTML 缓存撕裂，项目有意不启用离线 Service Worker，需联网使用。
 
-### 🛡️ Zero-Trust 幽灵防御体系
-- 👻 **隐身模式 (Ghost Admin)** — 彻底摒弃传统的 `/login` 暴露入口。采用全站隐藏的 `/admin` 幽灵路由，只有您自己知道控制台的唤醒密码。
-- 🚫 **404 伪装拦截** — 面对未经授权的 API 请求或恶意嗅探，系统不再返回 `401/403` 报错，而是直接强制返回 `404 Not Found` 伪装，让漏洞扫描器误以为这是一个静态空站，杜绝算力消耗。
-- 🔐 **法医级安全加固** — 内置 CSP 安全头、CSRF 跨站防御、请求体体积限制、基于 `Web Crypto` 的时序安全密码比对，以及防暴力破解 IP 锁定机制。
-- 🕵️ **隐私级图标代理** — 独创的四级降级图标代理机制（DuckDuckGo → HTML `<head>` 解析 + Web Manifest → 静态路径并发探测 → 首字母 SVG 生成），内置 AbortController 超时控制与 512KB 体积安全限制，所有请求均由 Worker 服务端发起，彻底切断第三方追踪器对您私有书签域名的隐私窥探，确保图标 100% 显示。
+### 🛡️ 安全与访问控制
+- **隐藏后台入口**：普通首页 `/` 不展示登录按钮，访问 `/admin`（或带 `?admin` 参数）时底部 Dock 栏才会显示「登录」入口；未鉴权请求私有或管理接口统一返回 `404 Not Found` 伪装。
+- **基础防护**：配置 CSP 安全头、`hono/csrf` 同源校验、`/api/*` 请求体上限 `50KB`、基于 `Web Crypto` 的 `timingSafeEqual` 密钥比对（`safeCompare`），以及基于 D1 的登录失败限流（连续失败 5 次锁定该 IP 15 分钟）。
+- **元数据抓取 SSRF 防护（`POST /api/link/meta`）**：仅 Root 管理员可用；限制 `http/https` 协议，拦截 URL 凭据、私网/回环/保留 IP 字面量与同域自请求，手动检查 3xx 重定向跳转目标（最多 3 跳），5 秒超时并流式截断前 64KB（兼容 UTF-8 与 GBK/GB18030/Big5 等常见中文编码）；由于 Workers 在 `fetch()` 前无法自行做 DNS 解析，域名若通过 DNS 解析到内网地址依赖 Workers 平台自身的出站限制。
 
-### 🎨 现代美学与卓越交互
-- 💠 **自适应毛玻璃 UI** — 采用最新的 DaisyUI v5 组件库，融合动态高斯模糊与暗黑模式 (Dark Mode)，一键切换，视觉体验极具未来感。
-- 📁 **多级嵌套分类** — 原生支持父子两级嵌套分类（Subcategories），通过平滑的悬浮下拉菜单呈现海量书签。
-- 🖱️ **无缝拖拽排序** — 深度集成 SortableJS，鼠标拖拽卡片即可实时完成重排，位置信息瞬间持久化至边缘云端。
-- 🔥 **智能高频推荐** — 自动统计每一次书签点击，智能萃取并置顶"常用推荐"集合（最高展示 24 个），越用越懂你。
-- 🔍 **智能加权搜索** — 站内搜索按标题 > 描述 > URL 的权重排序结果，200ms 防抖优化输入体验。
-- ⌨️ **全局快捷键** — `Ctrl+K` 秒聚焦搜索框，`Esc` 一键关闭弹窗或清空搜索，站内搜索按 `Enter` 直达首条结果。
-- 📋 **安全审计日志** — 聚焦安全事件：后台访问记录、登录成功/失败、暴力破解锁定、伪造 Cookie 检测，支持一键清空与分页浏览。
-- 🔄 **图标缓存管理** — 支持在编辑链接时一键刷新指定域名的图标边缘缓存，无需等待 7 天过期。
-- 🧹 **点击次数管理** — 支持在编辑链接时一键清零指定链接的访问次数，灵活管理"常用推荐"排名。
-- 📦 **全量备份与恢复** — 支持一键导出/导入带有父子分类结构、私有状态及图标设置的 JSON 备份文件，内置 URL 规范校验与重复项跳过逻辑。
-- 🚫 **重复链接防护** — 自动检测同分类下的重复 URL，防止误操作导致重复书签。
+### 🎨 交互与书签管理
+- **界面与主题**：Tailwind CSS v4 + DaisyUI v5 玻璃拟态卡片，支持暗色/亮色主题切换，支持自定义背景图 URL（经 `http/https` 安全校验后支持实时预览与保存）。
+- **两级分类结构**：支持顶级分类与子分类，桌面端悬浮、移动端点击展开子分类菜单，支持右键分类 Tab 编辑或删除。
+- **管理操作与批量整理**：
+  - 管理员登录后可动态加载 `SortableJS` 开启拖拽排序；
+  - 支持开启「多选」模式，通过底部悬浮操作栏一次性批量移动分类、切换公开/私有状态或删除；
+  - 鼠标悬停卡片点击编辑/删除按钮，或移动端长按卡片 500ms 唤出操作菜单。
+- **元数据自动识别与缓存控制**：添加或编辑链接时可点击「🔍 自动识别」填充空白标题、描述与图标 URL；编辑弹窗支持一键清除对应域名或自定义图标 URL 的边缘缓存（`POST /api/icon/purge`），以及清零单条链接的点击次数。
+- **常用推荐与点击去重**：客户端记录 30 分钟同链接点击冷却防刷；管理员登录后自动置顶展示「🔥 常用推荐」虚拟分类（按点击量取前 24 条公开链接）。
+- **站内搜索与快捷键**：支持站内加权搜索（标题 > 描述 > URL，200ms 防抖）及外链搜索引擎切换；支持 `Ctrl/Cmd + K` 聚焦搜索、`Esc` 关闭弹窗或清空搜索、站内搜索按 `Enter` 打开首条结果。
+- **备份导出与 HTML 书签导入**：支持导出完整 JSON 备份；导入同时兼容 JSON 备份文件与 Chrome / Edge / Firefox 导出的 HTML 书签文件（自动忽略非 `http/https` 链接及大体积内联 `data:` 图标，两级以上目录自动扁平化并完成同名消歧，按字节与条数自动分片上传以匹配 `50KB` 接口上限）。
+- **只读 API Token 与审计日志**：设置弹窗可直接创建、一次性复制、查看与吊销只读 API Token；日志弹窗记录管理员访问、登录成功/失败、IP 锁定与伪造会话等事件，支持分页（5 条/15 条）与清空。
 
 ---
 
-## 🛠️ 技术栈 (Tech Stack)
+## 🛠️ 技术栈
 
-| 架构层级 | 使用技术 | 版本 | 为什么选择它？(核心优势) |
-|---|---|---|---|
-| **边缘计算** | Cloudflare Workers | — | 全球边缘节点覆盖，零冷启动延迟，每月 10 万次免费读写额度。 |
-| **边缘框架** | Hono | v4 | 专为边缘计算打造的 Web 框架，极速路由映射，体积小到极致。 |
-| **开发语言** | TypeScript | v5 | 提供严苛的静态类型推断，在编译期扼杀 90% 的低级错误。 |
-| **边缘数据** | Cloudflare D1 | — | Serverless 架构下的原生 SQLite，无缝接入 Worker 且极度稳定。 |
-| **样式引擎** | Tailwind CSS | v4 | 原子化 CSS 鼻祖，配合 JIT 引擎实现真正的零冗余代码打包。 |
-| **组件设计** | DaisyUI | v5 | 极其优雅的语义化 UI 组件库，极大地简化了 Tailwind 类名堆砌。 |
-| **前端交互** | Vanilla JS (原生) | — | 彻底抛弃 React/Vue 沉重的客户端运行时，实现毫秒级页面注水。 |
-| **输入校验** | Zod | v3 | 完美契合 TypeScript 的前后端同构校验方案，拦截一切脏数据。 |
-
----
-
-## 🚀 部署指南 (Deployment)
-
-我们为您提供了两种主流部署方式，请根据您的开发习惯任选其一。
-
-### 📋 必须的前置步骤：创建 D1 数据库
-> 无论您选择哪种部署方式，都必须先在 Cloudflare 创建好数据库承载空间。
-
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
-2. 左侧菜单展开 **Workers & Pages** → 点击 **D1 SQL Database**
-3. 点击 **Create database**，名称填写 `nav-db`
-4. 创建完成后，复制页面上显示的 **Database ID**（由横线连接的长字符串，后面要用）。
+| 层级 | 技术 | 说明 |
+|---|---|---|
+| **运行时** | Cloudflare Workers | 免费版每日 `100,000` 次请求、单次 `10ms` CPU 时间、`128 MB` 内存 |
+| **Web 框架** | Hono v4 | 路由、JSX 服务端渲染（SSR）、安全头与 CSRF 中间件 |
+| **数据库** | Cloudflare D1 | 边缘 SQLite 数据库（免费版每日 `500 万` 行读、`10 万` 行写，单库上限 `500 MB`） |
+| **开发语言** | TypeScript v5 | 服务端与客户端（`src/client/`）独立 tsconfig 类型校验 |
+| **前端构建 & 样式** | esbuild + Tailwind CSS v4 + DaisyUI v5 | 客户端 TS 模块打包为 `public/client.min.js`，按需生成 `public/output.css` |
+| **输入校验** | Zod v3 | 配合 `@hono/zod-validator` 进行请求参数校验 |
+| **测试框架** | Vitest + Miniflare | 在本地 `workerd` + D1 模拟环境中执行单元测试与端到端集成测试 |
 
 ---
 
-### 🌟 方式一：自动化流水线部署 (GitHub Actions) - 强烈推荐
-> **全程在浏览器端操作，无需配置任何本地开发环境，后续更新完全自动化！**
+## 🚀 部署指南
+
+### 前置步骤：创建 D1 数据库
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)。
+2. 进入 **Workers & Pages** → **D1 SQL Database**，创建名为 `nav-db` 的数据库。
+3. 复制生成的 **Database ID**（UUID 格式）备用。
+
+---
+
+### 方式一：GitHub Actions 自动化部署（推荐）
 
 #### 1. Fork 本仓库
-点击页面右上角 **Fork** 按钮，将本仓库复制到您的账号下。
+点击右上角 **Fork** 将仓库复制到你的 GitHub 账号下。
 
 #### 2. 获取 Cloudflare 凭证
-- **API Token**：[点击这里生成 Token](https://dash.cloudflare.com/profile/api-tokens) → 选择 `Edit Cloudflare Workers` 模板 → 生成并**妥善保存**。
-- **Account ID**：在 Cloudflare Dashboard → Workers & Pages 面板右侧复制。
+- **API Token**：前往 [API Tokens](https://dash.cloudflare.com/profile/api-tokens) 使用 `Edit Cloudflare Workers` 模板生成并保存。
+- **Account ID**：在 Cloudflare Dashboard → **Workers & Pages** 页面右侧复制。
 
-#### 3. 配置 GitHub 密钥
-在您 Fork 后的仓库页面 → **Settings** → **Secrets and variables** → **Actions** → 点击 **New repository secret**，依次添加以下六个变量：
+#### 3. 配置 GitHub Actions Secrets
+进入仓库 **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，依次添加以下 **6 个密钥**：
 
-| 密钥名称 (Name) | 密钥内容 (Value) |
+| 密钥名称 | 说明 |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | 刚刚生成的 API Token |
-| `CLOUDFLARE_ACCOUNT_ID` | 您的 Cloudflare 账户 ID |
-| `CLOUDFLARE_D1_ID` | **前置步骤**中创建的 D1 Database ID |
-| `PASSWORD` | 您想设置的后台最高权限登录密码 |
-| `COOKIE_SECRET` | 填写一段随机复杂的字符串，用于 Cookie Session 签名防伪造 |
-| `TOKEN_SALT` | 随意填写一段复杂的英文字符串，用于数据加密 |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID |
+| `CLOUDFLARE_D1_ID` | 前置步骤创建的 D1 Database ID |
+| `PASSWORD` | 管理员登录密码 |
+| `COOKIE_SECRET` | Cookie Session 签名密钥（建议为随机长字符串） |
+| `TOKEN_SALT` | API Token 哈希盐值（建议为随机长字符串） |
 
-#### 4. 一键触发部署
-进入仓库的 **Actions** 标签页 → 允许运行工作流 → 点击左侧 **Deploy Worker** → 右侧点击 **Run workflow**。
-*(等待 1-2 分钟，出现绿色对勾即代表全世界都能访问您的专属导航站了！)*
+#### 4. 触发部署
+- **首次部署**：进入仓库 **Actions** 标签页 → 选择 **Deploy Worker** → 点击 **Run workflow**（`init_db` 保持默认 `auto` 即可在检测到全新空库时自动执行 `migrations/0001_init.sql` 初始化建表）。
+- **后续更新**：推送代码到 `main` 分支即会自动执行 CSS/JS 构建、类型检查（`npm run typecheck`）、自动化测试（`npm test`）并部署到 Cloudflare Workers。
 
 ---
 
-### 💻 方式二：本地硬核部署 (Wrangler CLI)
-> **适合前端开发者，可以在本地修改代码后直接一键推送到云端。**
+### 方式二：本地 Wrangler CLI 部署
 
-**前置要求**：已安装 Node.js v18+ 并且具备基本的终端操作能力。
+需要本地已安装 Node.js（建议 v20/v22+）：
 
 ```bash
-# 1. 克隆并进入目录
+# 1. 克隆并安装依赖
 git clone https://github.com/<你的用户名>/cf-worker-nav.git
 cd cf-worker-nav
 npm install
 
-# 2. 登录您的 Cloudflare 账号
+# 2. 登录 Cloudflare 账号
 npx wrangler login
 
-# 3. 创建本地配置文件
-# 复制模板并填写您真实的 D1 Database ID
+# 3. 创建本地 wrangler.toml 并填入真实 D1 Database ID
 cp wrangler.toml.example wrangler.toml
-# 打开 wrangler.toml，将 YOUR_D1_DATABASE_ID_HERE 替换为您真实获取到的 ID。
 
-# 4. 初始化远程云端数据库表结构
+# 4. 初始化远程数据库表结构（仅全新空库执行，切勿对已有数据的库重复执行！）
 npx wrangler d1 execute nav-db --remote --file=migrations/0001_init.sql
 
-# 5. 构建代码并部署到云端
+# 5. 构建并部署
 npm run deploy
 ```
 
-> **注意**：部署完成后，请前往 Cloudflare 控制台 -> Workers -> `cf-worker-nav` -> Settings -> Variables，手动添加 `PASSWORD` 和 `COOKIE_SECRET` 环境变量作为您的登录凭证与会话签名密钥。
+> **提示**：首次部署后请前往 Cloudflare Dashboard → Workers & Pages → `cf-worker-nav` → **Settings** → **Variables and Secrets** 添加 `PASSWORD`、`COOKIE_SECRET` 与 `TOKEN_SALT`。
+
+### Cloudflare 域名缓存建议
+- 在域名的 **缓存（Caching）→ 配置（Configuration）** 中，建议将 **浏览器缓存 TTL（Browser Cache TTL）** 设为 **`遵循现有标头（Respect Existing Headers）`**。
+- 这样浏览器会严格遵循代码与 `public/_headers` 下发的缓存时长（CSS/JS 1 年、图标 7 天、访客首页 HTML `max-age=0`：由边缘 `caches.default` 命中并返回、不查 D1，后台修改后清缓存即可实时刷新）。
+- **无需**在控制台额外创建 Cache Rules 或 Page Rules：静态资产由 Workers Static Assets（`Assets-First`）直接托管，而动态路由由 Worker 内部的 `caches.default` 管理。
 
 ---
 
 ## 📖 使用指南
 
-### 👻 如何召唤幽灵后台？
-由于系统取消了常规的登录入口，访客只能看到您公开的干净书签。
-1. 在浏览器地址栏，于您的域名后加上 `/admin` (例如：`https://nav.yourdomain.com/admin`)
-2. 此时页面右下角将"幽灵浮现"一个隐藏的 🔑 图标。
-3. 点击它，输入您的 `PASSWORD`。验证成功后，全功能的管理 Dock 栏将从底部弹出，私密书签也将瞬间解密展现。
+### 登录与基础管理
+1. 正常访问域名 `/` 仅展示公开书签；在域名后加上 `/admin`（例如 `https://nav.yourdomain.com/admin`）后，底部悬浮 Dock 栏会出现 **「登录」** 按钮。
+2. 点击登录并输入 `PASSWORD`，验证通过后 Dock 栏会展开全部管理功能：
 
-### 🕹️ 核心操作
-| 需求 | 操作方式 |
+| 功能入口 | 用途 |
 |---|---|
-| **新增书签/分类** | 唤出 Dock 栏后，点击对应的「➕ 添加」或「📁 分类」按钮。 |
-| **拖拽排序** | 在 Dock 栏点击「🔀 排序」解锁卡片，拖动调整位置后点击保存。 |
-| **导入旧数据** | 在 Dock 栏点击「⚙️ 设置」，选择您的旧版 JSON 备份文件一键导入。 |
-| **查看操作日志** | 在 Dock 栏点击「📋 日志」，默认展示最近 5 条，可切换查看全部或一键清空。 |
-| **刷新图标缓存** | 点击链接卡片的「✏️ 编辑」按钮，在弹窗中点击「🔄 刷新图标缓存」。 |
+| **添加 / 分类** | 新增书签（支持「🔍 自动识别」抓取标题、描述与图标）或新增一/二级分类 |
+| **排序** | 开启拖拽排序模式，拖动卡片即时保存顺序 |
+| **多选** | 进入批量整理模式，跨卡片选中后批量移动分类、设私有/公开或删除 |
+| **设置** | 修改站点标题、预览并保存背景图片、导入 JSON / 浏览器 HTML 书签、导出 JSON 备份、创建/吊销只读 API Token |
+| **日志** | 分页查看安全与登录审计日志或清空日志 |
 
 ---
 
-## ❓ 极客问答 (FAQ)
+## ❓ 常见问题 (FAQ)
 
-**Q: 部署后访问显示 "Database D1 is not bound" 是怎么回事？**
-> 这是因为云端没有找到对应的数据库。请检查 `wrangler.toml` (方式二) 或 GitHub Secrets 中的 `CLOUDFLARE_D1_ID` (方式一) 是否填写了正确的**数据库 ID**（注意：是 UUID 格式的 ID，不是数据库名字）。
+**Q: 部署后提示 `"Database D1 is not bound"` 怎么办？**
+> 请核对 GitHub Secret 中的 `CLOUDFLARE_D1_ID`（或本地 `wrangler.toml` 中的 `database_id`）是否填入了正确的 UUID 格式 Database ID（而非数据库名称 `nav-db`）。
 
-**Q: 连续输错密码被锁定了怎么办？**
-> 系统为了防止被暴力破解，连续输错 5 次会封禁您的 IP 15 分钟。您只能等待 15 分钟，或者进入 Cloudflare D1 控制台，执行 `DELETE FROM login_attempts;` 手动解封。
+**Q: 连续输错密码被锁定怎么办？**
+> 连续失败 5 次会锁定对应 IP 15 分钟。可等待自动解锁，或在 Cloudflare D1 控制台执行 `DELETE FROM login_attempts;` 手动清除锁定记录。
 
-**Q: API Token 怎么生成？为什么前端没有管理按钮？**
-> 本项目已完整内置了极其安全的 API Token 后台逻辑（生成、哈希加盐存储、校验），但遵循极简原则，**目前未提供前端 UI**。
-> - **如何生成**：您可以使用开发者工具或 cURL，在登录状态下（携带 Cookie）向 `POST /api/token/create` 发送 `{"name": "my-token"}` 即可获取。
-> - **纯只读设计**：目前的 Token 仅拥有**只读权限**（系统仅赋予 `isUser = true`），只能用来读取私有书签，无法进行增删改操作。
-> - **如何开启读写权限（供插件使用）**：如果您想开发自动化工具（如一键收藏浏览器扩展），只需打开 `src/middleware/auth.ts`，将 Token 校验成功后的逻辑改为 `isRoot = true; isUser = true;`，重新部署后您的 Token 即拥有完整读写权限。
+**Q: 只读 API Token 怎么创建和使用？能否开放写入权限？**
+> 登录后在底部 Dock 打开 **「设置」→「只读 API 令牌」**，输入备注名点击「+ 生成」并立即复制明文 Token（仅在创建时显示一次）。外部客户端请求时携带请求头 `Authorization: Bearer <token>` 可读取包含私有书签在内的 `GET /api/data`，默认仅只读权限。如需将其改为读写权限，可自行修改 [src/middleware/auth.ts](src/middleware/auth.ts#L71) 的权限判定后重新部署。
 
-**Q: 图标显示异常怎么办？**
-> 图标通过四级降级代理获取（DuckDuckGo → 网站 HTML `<head>` 解析 + Web Manifest → 静态路径并发探测 → 自动生成首字母 SVG），所有请求均由 Worker 服务端发起，不会暴露用户隐私。如果某个图标显示异常，可在编辑链接时点击「🔄 刷新图标缓存」手动清除边缘缓存。也可以在图标 URL 字段手动填写高质量图标地址（如网站的 SVG logo）来覆盖自动获取。
+**Q: 某个网站的图标抓取错了或想刷新怎么处理？**
+> 编辑该链接时点击 **「🔄 刷新图标缓存」**，系统会同时清理对应域名与自定义图标 URL 的 Worker 边缘缓存；或者在「图标 URL」栏直接填入指定图片地址。
 
-**Q: 为什么不能添加重复的链接？**
-> 系统会自动检测同一分类下是否已存在相同 URL 的链接，防止误操作导致重复。如果您需要将同一链接归档到多个分类，只需在不同分类下分别添加即可。
-
-**Q: 网站部署后会有大量请求消耗 Cloudflare 免费配额吗？**
-> 完全无需担心。系统经过深度的架构级请求数优化：
-> 1. **页面级边缘缓存**：未登录访客访问首页直接命中 Cloudflare Cache API，消耗 0 次 D1 查询；
-> 2. **图标按需懒加载**：首屏仅请求当前可见分类的图标，其余分类在切换 Tab 时才按需拉取，冷启动请求数减少约 80%；
-> 3. **浏览器强缓存**：图标自带 7 天浏览器强缓存，已访问过的设备二次访问直接走本地磁盘/内存缓存，0 网络请求；
-> 4. **写时自动失效**：管理员修改数据时，边缘缓存自动秒级清除，无需担心数据滞后。即便在 Cloudflare 免费计划（每日 10 万次请求）下，也能轻松承载日常高频访问。
+**Q: 为什么同分类下不能添加相同 URL 的链接？**
+> 系统按 `(category_id, url)` 做了同分类去重限制以防误操作重复添加；同一网址仍可分别归档到不同分类中。
 
 ---
 
-## 👨‍💻 二次开发
+## 👨‍💻 本地开发与测试
 
 ```bash
-# 拷贝环境配置并填写本地密码
+# 1. 复制本地环境变量与 Wrangler 配置
 cp .env.example .dev.vars
-
-# 创建本地 wrangler 配置
 cp wrangler.toml.example wrangler.toml
-# 编辑 wrangler.toml 填入您的 D1 Database ID
+# 编辑 wrangler.toml 填入你的 D1 Database ID
 
-# 初始化本地测试数据库
+# 2. 初始化本地模拟数据库
 npx wrangler d1 execute nav-db --local --file=migrations/0001_init.sql
 
-# 启动包含 CSS 实时编译的本地服务器
+# 3. 启动本地开发服务器（含 CSS 与客户端 JS 构建）
 npm run dev
+
+# 4. 类型检查与自动化测试（Vitest + Miniflare）
+npm run typecheck
+npm test
 ```
 
 ## 📄 License
