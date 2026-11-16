@@ -10,10 +10,12 @@ import {
   CategoryCreateSchema, CategoryUpdateSchema,
   ReorderSchema, ConfigUpdateSchema,
   IdSchema, VisitSchema, TokenCreateSchema,
+  LinkMetaSchema, LinkBatchSchema, IconPurgeSchema,
 } from '../types'
 import { requireAuth, requireRoot, getCookieSecret } from '../middleware/auth'
 import { signSession } from '../utils/session'
 import { safeCompare } from '../utils/security'
+import { fetchUrlMetadata } from '../utils/ssrf'
 
 const api = new Hono<HonoEnv>()
 
@@ -407,13 +409,20 @@ api.get('/icon', async (c) => {
   }
 })
 
-// [POST] 图标缓存清除 (管理员手动刷新坏图标)
-api.post('/icon/purge', requireAuth, requireRoot, async (c) => {
-  const { domain } = await c.req.json().catch(() => ({ domain: '' })) as { domain: string }
-  if (!domain) return c.json({ error: 'Missing domain' }, 400)
-  const cacheKey = new Request(`https://icon-cache.internal/icon/${domain.toLowerCase()}`, { method: 'GET' })
-  const deleted = await caches.default.delete(cacheKey)
-  return c.json({ success: true, domain, cacheCleared: deleted })
+// [POST] 图标缓存清除 (管理员手动刷新坏图标，支持按域名和/或自定义图标 URL)
+api.post('/icon/purge', requireAuth, requireRoot, zValidator('json', IconPurgeSchema), async (c) => {
+  const { domain, url } = c.req.valid('json')
+  const tasks: Promise<boolean>[] = []
+  if (domain) {
+    const domainKey = new Request(`https://icon-cache.internal/icon/${domain.toLowerCase()}`, { method: 'GET' })
+    tasks.push(caches.default.delete(domainKey))
+  }
+  if (url) {
+    const urlKey = new Request(`https://icon-cache.internal/icon-url/${encodeURIComponent(url)}`, { method: 'GET' })
+    tasks.push(caches.default.delete(urlKey))
+  }
+  const results = await Promise.all(tasks)
+  return c.json({ success: true, domain, url, cacheCleared: results.some(Boolean) })
 })
 
 // ==========================================
@@ -496,15 +505,17 @@ api.get('/data', requireAuth, async (c) => {
   return c.json(await dao.getAllData(true))
 })
 
-// 辅助函数：清除公开边缘缓存（首页 SSR + 公共配置）
+// 辅助函数：清除公开边缘缓存（首页 SSR + 公共配置 + Manifest）
 function purgePublicCache(c: any) {
   try {
     const url = new URL(c.req.url)
     const homeKey = new Request(`${url.origin}/`, { method: 'GET' })
     const configKey = new Request(`${url.origin}/api/config`, { method: 'GET' })
+    const manifestKey = new Request(`${url.origin}/manifest.json`, { method: 'GET' })
     c.executionCtx.waitUntil(Promise.all([
       caches.default.delete(homeKey),
       caches.default.delete(configKey),
+      caches.default.delete(manifestKey),
     ]))
   } catch { /* ignore */ }
 }
@@ -583,6 +594,21 @@ api.post('/link/reorder', requireAuth, requireRoot, zValidator('json', ReorderSc
   return c.json(res)
 })
 
+api.post('/link/batch', requireAuth, requireRoot, zValidator('json', LinkBatchSchema), async (c) => {
+  const dao = c.get('dao')
+  const data = c.req.valid('json')
+  const res = await dao.batchLinks(data)
+  purgePublicCache(c)
+  return c.json({ success: true, ...res })
+})
+
+api.post('/link/meta', requireAuth, requireRoot, zValidator('json', LinkMetaSchema), async (c) => {
+  const { url } = c.req.valid('json')
+  const selfHostname = new URL(c.req.url).hostname
+  const meta = await fetchUrlMetadata(url, selfHostname)
+  return c.json({ success: true, ...meta })
+})
+
 // ==========================================
 // Root 专属接口
 // ==========================================
@@ -590,9 +616,10 @@ api.post('/link/reorder', requireAuth, requireRoot, zValidator('json', ReorderSc
 api.post('/config', requireAuth, requireRoot, zValidator('json', ConfigUpdateSchema), async (c) => {
   const dao = c.get('dao')
   const { key, value } = c.req.valid('json')
-  await dao.updateConfig(key, value)
+  const normalizedValue = key === 'title' ? value.trim() : value
+  await dao.updateConfig(key, normalizedValue)
   purgePublicCache(c)
-  return c.json({ status: 'ok', key, value })
+  return c.json({ status: 'ok', key, value: normalizedValue })
 })
 
 api.post('/import', requireAuth, requireRoot, async (c) => {

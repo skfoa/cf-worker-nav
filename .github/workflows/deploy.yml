@@ -21,19 +21,22 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install dependencies
         run: npm ci
-
-      - name: TypeScript type check
-        run: npx tsc --noEmit
 
       - name: Build Tailwind CSS
         run: npm run build:css
 
       - name: Build Client JS
         run: npm run build:js
+
+      - name: TypeScript type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
 
       - name: Inject D1 Database ID
         run: |

@@ -1,0 +1,9 @@
+/output.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/client.min.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/favicon.ico
+  Cache-Control: public, max-age=604800
+

@@ -10,6 +10,7 @@ import { SearchBox } from '../components/SearchBox'
 import { LinkGrid } from '../components/LinkGrid'
 import { Dock } from '../components/Dock'
 import { Modal } from '../components/Modal'
+import { ASSET_VERSIONS } from '../generated/assets'
 import { safeJsonStringify, escapeHtml } from '../utils/helpers'
 
 const pages = new Hono<HonoEnv>()
@@ -42,8 +43,21 @@ Disallow: /
   )
 })
 
-// [GET] PWA Manifest
+// [GET] PWA Manifest (边缘缓存 1 小时)
 pages.get('/manifest.json', async (c) => {
+  const url = new URL(c.req.url)
+  const cache = caches.default
+  const cacheKey = new Request(`${url.origin}/manifest.json`, { method: 'GET' })
+
+  try {
+    const cached = await cache.match(cacheKey)
+    if (cached) {
+      const headers = new Headers(cached.headers)
+      headers.set('X-Cache', 'HIT')
+      return new Response(cached.body, { status: cached.status, headers })
+    }
+  } catch { /* cache fallback */ }
+
   const dao = c.get('dao')
   let title = c.env.TITLE || 'Nav'
   try {
@@ -51,21 +65,43 @@ pages.get('/manifest.json', async (c) => {
     if (config.title) title = config.title
   } catch { /* fallback */ }
 
-  return c.json(
-    {
-      name: title,
-      short_name: title.length > 12 ? 'Nav' : title,
-      start_url: '/',
-      display: 'standalone',
-      background_color: '#1a1a1a',
-      theme_color: '#1a1a1a',
-      icons: [
-        { src: 'https://cdn-icons-png.flaticon.com/512/1006/1006771.png', sizes: '192x192', type: 'image/png' },
-      ],
+  const payload = JSON.stringify({
+    name: title,
+    short_name: title.length > 12 ? 'Nav' : title,
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#1a1a1a',
+    theme_color: '#1a1a1a',
+    icons: [
+      { src: 'https://cdn-icons-png.flaticon.com/512/1006/1006771.png', sizes: '192x192', type: 'image/png' },
+    ],
+  })
+
+  const response = new Response(payload, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+      'X-Cache': 'MISS',
     },
-    200,
-    { 'Cache-Control': 'public, max-age=86400' }
-  )
+  })
+
+  try {
+    c.executionCtx.waitUntil(
+      cache.put(
+        cacheKey,
+        new Response(payload, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+          },
+        })
+      )
+    )
+  } catch { /* cache fallback */ }
+
+  return response
 })
 
 // [GET] 首页及管理员入口
@@ -136,7 +172,7 @@ const renderApp = async (c: Context<HonoEnv>) => {
         {/* 客户端状态注入 */}
         <script dangerouslySetInnerHTML={{ __html: `window.__NAV_STATE__=${clientState};` }} />
         {/* 客户端逻辑 */}
-        <script src="/client.min.js" />
+        <script src={`/client.min.js?v=${ASSET_VERSIONS.js}`} />
       </Layout>,
       200,
       headers

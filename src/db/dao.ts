@@ -344,6 +344,92 @@ export class DAO {
     return await this.db.batch(stmts)
   }
 
+  async batchLinks(
+    input:
+      | { action: 'move'; ids: number[]; category_id: number }
+      | { action: 'privacy'; ids: number[]; is_private: 0 | 1 }
+      | { action: 'delete'; ids: number[] }
+  ): Promise<{ updated: number; skipped: number }> {
+    const uniqueIds = Array.from(new Set(input.ids))
+    if (uniqueIds.length === 0) return { updated: 0, skipped: 0 }
+    const n = this.now()
+    const CHUNK_SIZE = 50
+    const stmts: D1PreparedStatement[] = []
+    let skipped = 0
+
+    if (input.action === 'move') {
+      const targetCat = await this.db
+        .prepare('SELECT id FROM categories WHERE id = ?')
+        .bind(input.category_id)
+        .first<{ id: number }>()
+      if (!targetCat) {
+        throw new Error('目标分类不存在')
+      }
+
+      const existingInTarget = await this.db
+        .prepare('SELECT url FROM links WHERE category_id = ?')
+        .bind(input.category_id)
+        .all<{ url: string }>()
+      const occupiedUrls = new Set((existingInTarget.results || []).map(r => r.url))
+
+      // Cloudflare D1 单次查询绑定参数上限为 100，按 CHUNK_SIZE 分片查询
+      const movingRowsList: Array<{ id: number; category_id: number; url: string }> = []
+      for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
+        const idSlice = uniqueIds.slice(i, i + CHUNK_SIZE)
+        const placeholders = idSlice.map(() => '?').join(',')
+        const part = await this.db
+          .prepare(`SELECT id, category_id, url FROM links WHERE id IN (${placeholders})`)
+          .bind(...idSlice)
+          .all<{ id: number; category_id: number; url: string }>()
+        if (part.results?.length) movingRowsList.push(...part.results)
+      }
+
+      const maxSortRes = await this.db
+        .prepare('SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM links WHERE category_id = ?')
+        .bind(input.category_id)
+        .first<{ max_sort: number }>()
+      let nextSort = (maxSortRes?.max_sort || 0) + 1
+
+      for (const row of movingRowsList) {
+        if (row.category_id === input.category_id) {
+          skipped++
+          continue
+        }
+        if (occupiedUrls.has(row.url)) {
+          skipped++
+          continue
+        }
+        occupiedUrls.add(row.url)
+        stmts.push(
+          this.db
+            .prepare('UPDATE links SET category_id = ?, sort_order = ?, updated_at = ? WHERE id = ?')
+            .bind(input.category_id, nextSort++, n, row.id)
+        )
+      }
+    } else if (input.action === 'privacy') {
+      for (const id of uniqueIds) {
+        stmts.push(
+          this.db
+            .prepare('UPDATE links SET is_private = ?, updated_at = ? WHERE id = ?')
+            .bind(input.is_private, n, id)
+        )
+      }
+    } else {
+      for (const id of uniqueIds) {
+        stmts.push(this.db.prepare('DELETE FROM links WHERE id = ?').bind(id))
+      }
+    }
+
+    let updated = 0
+    for (let i = 0; i < stmts.length; i += CHUNK_SIZE) {
+      const results = await this.db.batch(stmts.slice(i, i + CHUNK_SIZE))
+      for (const r of results) {
+        updated += r.meta?.changes || 0
+      }
+    }
+    return { updated, skipped }
+  }
+
   // ===========================================
   // 系统配置
   // ===========================================

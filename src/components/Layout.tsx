@@ -3,6 +3,7 @@
  */
 import type { FC } from 'hono/jsx'
 import { SafeUrlSchema } from '../types'
+import { ASSET_VERSIONS } from '../generated/assets'
 
 interface LayoutProps {
   title: string
@@ -28,7 +29,7 @@ export const Layout: FC<LayoutProps> = ({ title, bgImage, children, nonce }) => 
       <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png" />
       <link rel="manifest" href="/manifest.json" />
       <meta name="theme-color" content="#1a1a1a" />
-      <link rel="stylesheet" href="/output.css" />
+      <link rel="stylesheet" href={`/output.css?v=${ASSET_VERSIONS.css}`} />
     </head>
     <body class={`min-h-screen tap-none text-base-content pb-28 ${safeBgImage ? 'bg-transparent' : 'bg-base-300'}`}>
       {/* 背景图 */}

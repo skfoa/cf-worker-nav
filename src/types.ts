@@ -2,6 +2,9 @@
  * src/types.ts - 全局类型定义 + Zod Schema
  */
 import { z } from 'zod'
+import type { Category, Link, CategoryWithItems, SiteConfig } from './shared/types'
+
+export type { Category, Link, CategoryWithItems, SiteConfig }
 
 // =====================================
 // Cloudflare Bindings
@@ -33,43 +36,8 @@ export type HonoEnv = {
 }
 
 // =====================================
-// Data Models
+// Data Models (re-exported from src/shared/types)
 // =====================================
-
-export interface Category {
-  id: number
-  title: string
-  sort_order: number
-  is_private: number
-  parent_id?: number | null
-  created_at: number
-  updated_at: number
-}
-
-export interface Link {
-  id: number
-  category_id: number
-  title: string
-  url: string
-  description: string
-  icon: string
-  sort_order: number
-  is_private: number
-  visits: number
-  created_at: number
-  updated_at: number
-}
-
-export interface CategoryWithItems extends Category {
-  items: Link[]
-  children?: CategoryWithItems[]
-}
-
-export interface SiteConfig {
-  title?: string
-  bg_image?: string
-  [key: string]: string | undefined
-}
 
 export interface ApiToken {
   id: number
@@ -136,6 +104,15 @@ export const ConfigUpdateSchema = z.object({
 }, {
   message: "bg_image 必须是合法的 http/https URL",
   path: ["value"]
+}).refine(data => {
+  if (data.key === 'title') {
+    const trimmed = data.value.trim()
+    return trimmed.length >= 1 && trimmed.length <= 100
+  }
+  return true
+}, {
+  message: "站点标题不能为空且不超过 100 个字符",
+  path: ["value"]
 })
 
 export const IdSchema = z.object({
@@ -146,4 +123,32 @@ export const VisitSchema = IdSchema
 
 export const TokenCreateSchema = z.object({
   name: z.string().trim().min(1, '名称不能为空').max(100),
+})
+
+export const LinkMetaSchema = z.object({
+  url: SafeUrlSchema,
+})
+
+export const LinkBatchSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('move'),
+    ids: z.array(z.number().int().positive()).min(1, '至少选择一个链接').max(200),
+    category_id: z.number().int().positive(),
+  }),
+  z.object({
+    action: z.literal('privacy'),
+    ids: z.array(z.number().int().positive()).min(1, '至少选择一个链接').max(200),
+    is_private: z.union([z.literal(0), z.literal(1)]),
+  }),
+  z.object({
+    action: z.literal('delete'),
+    ids: z.array(z.number().int().positive()).min(1, '至少选择一个链接').max(200),
+  }),
+])
+
+export const IconPurgeSchema = z.object({
+  domain: z.string().trim().min(1).max(253).optional(),
+  url: SafeUrlSchema.optional(),
+}).refine(data => Boolean(data.domain || data.url), {
+  message: '请提供 domain 或 url',
 })

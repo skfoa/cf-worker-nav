@@ -56,10 +56,6 @@ app.use('*', authMiddleware)
 app.route('/', pages)
 app.route('/api', api)
 
-app.get('/robots.txt', (c) => {
-  return c.text('User-agent: *\nDisallow: /')
-})
-
 app.notFound((c) => {
   return c.text('Not Found', 404)
 })
