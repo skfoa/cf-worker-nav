@@ -26,7 +26,8 @@ export const Layout: FC<LayoutProps> = ({ title, bgImage, children, nonce }) => 
       <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
       <meta name="robots" content="noindex, nofollow" />
       <title>{title}</title>
-      <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1006/1006771.png" />
+      <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+      <link rel="alternate icon" href="/favicon.ico" />
       <link rel="manifest" href="/manifest.json" />
       <meta name="theme-color" content="#1a1a1a" />
       <link rel="stylesheet" href={`/output.css?v=${ASSET_VERSIONS.css}`} />

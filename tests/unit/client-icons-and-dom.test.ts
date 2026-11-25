@@ -71,6 +71,14 @@ describe('Client DOM & Icon fallback', () => {
     const emojiRes = getClientIconSrc({ title: '🚀 面板', url: 'https://123.void.gv.uy', icon: LETTER_ICON_TOKEN })
     expect(emojiRes.isInline).toBe(true)
     expect(decodeURIComponent(emojiRes.iconSrc)).toContain('>🚀</text></svg>')
+
+    // 确认静态 favicon 文件格式正确：favicon.ico 为真实二进制 ICO，icon-192.png 为真实 PNG，favicon.svg 为矢量 SVG
+    const ico = fs.readFileSync('public/favicon.ico')
+    expect(ico.subarray(0, 4).toString('hex')).toBe('00000100')
+    const png = fs.readFileSync('public/icon-192.png')
+    expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+    const svg = fs.readFileSync('public/favicon.svg', 'utf8')
+    expect(svg.trimStart().startsWith('<svg')).toBe(true)
   })
 
   it('repairs early-failed SSR images during initImageErrorFallback without touching lazy placeholders', () => {

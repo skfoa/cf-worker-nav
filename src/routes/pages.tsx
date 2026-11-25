@@ -73,7 +73,8 @@ pages.get('/manifest.json', async (c) => {
     background_color: '#1a1a1a',
     theme_color: '#1a1a1a',
     icons: [
-      { src: 'https://cdn-icons-png.flaticon.com/512/1006/1006771.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' },
     ],
   })
 

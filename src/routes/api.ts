@@ -15,7 +15,7 @@ import {
 import { requireAuth, requireRoot, getCookieSecret } from '../middleware/auth'
 import { signSession } from '../utils/session'
 import { safeCompare } from '../utils/security'
-import { fetchUrlMetadata } from '../utils/ssrf'
+import { assertSafePublicUrl, fetchUrlMetadata, fetchWithSafeRedirects, isPrivateOrReservedHostname } from '../utils/ssrf'
 import { ICON_DOMAIN_REGEX } from '../shared/icon'
 
 const api = new Hono<HonoEnv>()
@@ -116,15 +116,45 @@ function generateLetterSvg(seed: string): string {
 
 // [GET] 图标代理 (分层降级：DuckDuckGo → HTML解析 → 静态路径竞速 → 首字母生成)
 api.get('/icon', async (c) => {
+  const reqUrl = new URL(c.req.url)
+  const allowedOrigin = c.env.ALLOWED_ORIGIN || reqUrl.origin
+
+  // 防盗链：仅允许本站同源（或 ALLOWED_ORIGIN 白名单）发起的图标请求，阻止外站嵌入与无来源直刷
+  const secFetchSite = (c.req.header('Sec-Fetch-Site') || '').toLowerCase()
+  const referer = c.req.header('Referer') || ''
+  const origin = c.req.header('Origin') || ''
+  let refererOrigin = ''
+  try { if (referer) refererOrigin = new URL(referer).origin } catch { /* invalid referer */ }
+
+  if (secFetchSite && secFetchSite !== 'same-origin') {
+    return c.text('Forbidden', 403)
+  }
+  if (referer && refererOrigin !== reqUrl.origin && refererOrigin !== allowedOrigin) {
+    return c.text('Forbidden', 403)
+  }
+  if (origin && origin !== reqUrl.origin && origin !== allowedOrigin) {
+    return c.text('Forbidden', 403)
+  }
+  const hasSameOriginSignal =
+    secFetchSite === 'same-origin' ||
+    refererOrigin === reqUrl.origin ||
+    refererOrigin === allowedOrigin ||
+    origin === reqUrl.origin ||
+    origin === allowedOrigin
+  if (!hasSameOriginSignal) {
+    return c.text('Forbidden', 403)
+  }
+
   const directUrl = c.req.query('url')
   const domain = c.req.query('domain')
 
   // ═══ 模式一：直接代理指定 URL（用户手动填写的自定义图标地址） ═══
   if (directUrl) {
     try {
-      const parsed = new URL(directUrl)
-      if (!['http:', 'https:'].includes(parsed.protocol)) return c.text('Invalid URL', 400)
-    } catch { return c.text('Invalid URL', 400) }
+      assertSafePublicUrl(directUrl, reqUrl.hostname)
+    } catch {
+      return c.text('Invalid URL', 400)
+    }
 
     const cache = caches.default
     const cacheKey = new Request(`https://icon-cache.internal/icon-url/${encodeURIComponent(directUrl)}`, { method: 'GET' })
@@ -139,14 +169,12 @@ api.get('/icon', async (c) => {
 
     try {
       const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      const ac = new AbortController()
-      const timer = setTimeout(() => ac.abort(), 5000)
-      const res = await fetch(directUrl, {
+      const { response: res } = await fetchWithSafeRedirects(directUrl, {
+        selfHostname: reqUrl.hostname,
         headers: { 'User-Agent': ua },
-        redirect: 'follow',
-        signal: ac.signal,
+        timeoutMs: 5000,
+        maxRedirects: 3,
       })
-      clearTimeout(timer)
 
       if (res.ok) {
         const ct = res.headers.get('Content-Type') || ''
@@ -159,7 +187,6 @@ api.get('/icon', async (c) => {
               headers: {
                 'Content-Type': contentType,
                 'Cache-Control': cacheControl,
-                'Access-Control-Allow-Origin': '*',
                 'X-Cache': 'MISS',
                 'X-Icon-Source': 'direct-fetched',
               },
@@ -169,7 +196,6 @@ api.get('/icon', async (c) => {
                 headers: {
                   'Content-Type': contentType,
                   'Cache-Control': cacheControl,
-                  'Access-Control-Allow-Origin': '*',
                   'X-Icon-Source': 'direct-fetched',
                 },
               }))
@@ -190,7 +216,6 @@ api.get('/icon', async (c) => {
       headers: {
         'Content-Type': 'image/svg+xml',
         'Cache-Control': 'public, max-age=86400, s-maxage=86400',
-        'Access-Control-Allow-Origin': '*',
         'X-Cache': 'MISS',
         'X-Icon-Source': 'generated-fallback',
       },
@@ -205,11 +230,11 @@ api.get('/icon', async (c) => {
 
   // ═══ 模式二：按域名自动探测图标 ═══
   if (!domain) return c.text('Missing domain or url parameter', 400)
-  if (!ICON_DOMAIN_REGEX.test(domain)) {
+  const domainLower = domain.toLowerCase()
+  if (!ICON_DOMAIN_REGEX.test(domain) || isPrivateOrReservedHostname(domainLower) || domainLower === reqUrl.hostname.toLowerCase()) {
     return c.text('Invalid domain format', 400)
   }
 
-  const domainLower = domain.toLowerCase()
   const cacheKey = new Request(`https://icon-cache.internal/icon/${domainLower}`, { method: 'GET' })
   const cache = caches.default
 
@@ -388,7 +413,6 @@ api.get('/icon', async (c) => {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': cacheControl,
-        'Access-Control-Allow-Origin': '*',
         'X-Cache': 'MISS',
         'X-Icon-Source': iconSource,
       },
@@ -398,7 +422,6 @@ api.get('/icon', async (c) => {
         headers: {
           'Content-Type': contentType,
           'Cache-Control': cacheControl,
-          'Access-Control-Allow-Origin': '*',
           'X-Icon-Source': iconSource,
         },
       }))

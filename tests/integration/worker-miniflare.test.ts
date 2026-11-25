@@ -52,6 +52,9 @@ describe('Worker end-to-end integration (Miniflare workerd + D1)', () => {
     expect(r1.headers.get('X-Cache')).toBe('MISS')
     expect(html1).not.toContain('onerror=')
     expect(html1).toContain('"bg_image":""')
+    expect(html1).toContain('href="/favicon.svg"')
+    expect(html1).toContain('href="/favicon.ico"')
+    expect(html1).not.toContain('flaticon.com')
     expect(html1).toContain(`/output.css?v=${ASSET_VERSIONS.css}`)
     expect(html1).toContain(`/client.min.js?v=${ASSET_VERSIONS.js}`)
 
@@ -398,16 +401,52 @@ describe('Worker end-to-end integration (Miniflare workerd + D1)', () => {
     expect(((await bulkDelRes.json()) as { updated: number }).updated).toBe(120)
   })
 
-  it('gracefully falls back to SVG when direct icon fetch fails offline and purges custom icon URL cache', async () => {
+  it('blocks hotlinking and private/self targets on /api/icon, gracefully falls back offline, and purges custom icon URL cache', async () => {
     const customUrl = 'https://down.example.com/favicon.ico'
+
+    // 1. 阻止无来源直刷与跨站盗链（403）
+    const bareReq = await mf.dispatchFetch(`${ORIGIN}/api/icon?url=${encodeURIComponent(customUrl)}`)
+    expect(bareReq.status).toBe(403)
+
+    const crossSiteReq = await mf.dispatchFetch(`${ORIGIN}/api/icon?url=${encodeURIComponent(customUrl)}`, {
+      headers: { 'Sec-Fetch-Site': 'cross-site', Referer: 'https://evil.example.com/' },
+    })
+    expect(crossSiteReq.status).toBe(403)
+
+    const spoofRefererReq = await mf.dispatchFetch(`${ORIGIN}/api/icon?domain=github.com`, {
+      headers: { Referer: `${ORIGIN}.evil.com/` },
+    })
+    expect(spoofRefererReq.status).toBe(403)
+
+    // 2. 同源请求但指向回环/保留 IP 或本站自身时提前返回 400，不发起外链抓取
+    const loopbackReq = await mf.dispatchFetch(`${ORIGIN}/api/icon?url=${encodeURIComponent('http://127.0.0.1:8080/x')}`, {
+      headers: { 'Sec-Fetch-Site': 'same-origin' },
+    })
+    expect(loopbackReq.status).toBe(400)
+
+    const selfUrlReq = await mf.dispatchFetch(`${ORIGIN}/api/icon?url=${encodeURIComponent(`${ORIGIN}/favicon.ico`)}`, {
+      headers: { Referer: `${ORIGIN}/` },
+    })
+    expect(selfUrlReq.status).toBe(400)
+
+    const selfDomainReq = await mf.dispatchFetch(`${ORIGIN}/api/icon?domain=123.pixel5.de5.net`, {
+      headers: { 'Sec-Fetch-Site': 'same-origin' },
+    })
+    expect(selfDomainReq.status).toBe(400)
+
+    // 3. 正常同源请求（离线降级 + 缓存命中 + 精准清除）
     fetchMock.get('https://down.example.com').intercept({ path: '/favicon.ico' }).replyWithError(new Error('offline'))
-    const r = await mf.dispatchFetch(`${ORIGIN}/api/icon?url=${encodeURIComponent(customUrl)}`)
+    const r = await mf.dispatchFetch(`${ORIGIN}/api/icon?url=${encodeURIComponent(customUrl)}`, {
+      headers: { 'Sec-Fetch-Site': 'same-origin', Referer: `${ORIGIN}/` },
+    })
     expect(r.status).toBe(200)
     expect(r.headers.get('Content-Type')).toBe('image/svg+xml')
     expect(r.headers.get('X-Icon-Source')).toBe('generated-fallback')
 
     await new Promise((res) => setTimeout(res, 150))
-    const rHit = await mf.dispatchFetch(`${ORIGIN}/api/icon?url=${encodeURIComponent(customUrl)}`)
+    const rHit = await mf.dispatchFetch(`${ORIGIN}/api/icon?url=${encodeURIComponent(customUrl)}`, {
+      headers: { 'Sec-Fetch-Site': 'same-origin' },
+    })
     expect(rHit.headers.get('X-Cache')).toBe('HIT')
 
     const purge = await mf.dispatchFetch(`${ORIGIN}/api/icon/purge`, {
