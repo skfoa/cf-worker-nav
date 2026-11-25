@@ -144,6 +144,11 @@ export const LinkBatchSchema = z.discriminatedUnion('action', [
     action: z.literal('delete'),
     ids: z.array(z.number().int().positive()).min(1, '至少选择一个链接').max(200),
   }),
+  z.object({
+    action: z.literal('icon'),
+    ids: z.array(z.number().int().positive()).min(1, '至少选择一个链接').max(200),
+    icon: z.string().max(500),
+  }),
 ])
 
 export const IconPurgeSchema = z.object({

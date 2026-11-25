@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { afterEach, describe, expect, it } from 'vitest'
 import { escapeHtml, sanitizeCssUrl } from '../../src/client/dom'
-import { applyImageFallback, buildLetterAvatarDataUrl, initImageErrorFallback } from '../../src/client/icons'
+import { applyImageFallback, buildLetterAvatarDataUrl, getClientIconSrc, initImageErrorFallback, LETTER_ICON_TOKEN } from '../../src/client/icons'
 
 const origWindow = (globalThis as Record<string, unknown>).window
 const origDocument = (globalThis as Record<string, unknown>).document
@@ -44,6 +44,33 @@ describe('Client DOM & Icon fallback', () => {
     applyImageFallback(img)
     expect(img.src.startsWith('data:image/svg+xml,')).toBe(true)
     expect(decodeURIComponent(img.src)).toContain('>&lt;</text></svg>')
+  })
+
+  it('resolves letter-icon marker and non-domain hosts directly to inline SVG without /api/icon', () => {
+    const letterRes = getClientIconSrc({ title: '自建服务', url: 'https://123.void.gv.uy', icon: LETTER_ICON_TOKEN })
+    expect(letterRes.isInline).toBe(true)
+    expect(letterRes.iconSrc.startsWith('data:image/svg+xml,')).toBe(true)
+    expect(decodeURIComponent(letterRes.iconSrc)).toContain('>自</text></svg>')
+
+    const upperRes = getClientIconSrc({ title: 'Panel', url: 'https://cp.xdmc.kdns.fr', icon: ' LETTER ' })
+    expect(upperRes.isInline).toBe(true)
+    expect(decodeURIComponent(upperRes.iconSrc)).toContain('>P</text></svg>')
+
+    const ipRes = getClientIconSrc({ title: 'Router', url: 'http://192.168.1.1:8080' })
+    expect(ipRes.isInline).toBe(true)
+    expect(ipRes.iconSrc.startsWith('data:image/svg+xml,')).toBe(true)
+
+    const localRes = getClientIconSrc({ title: 'Dev', url: 'http://localhost:3000' })
+    expect(localRes.isInline).toBe(true)
+
+    const normalRes = getClientIconSrc({ title: 'GitHub', url: 'https://github.com' })
+    expect(normalRes.isInline).toBe(false)
+    expect(normalRes.iconSrc).toBe('/api/icon?domain=github.com')
+
+    // 标题以代理对 Emoji 开头时不得因 charAt(0) 拆断高位代理导致 encodeURIComponent 抛 URIError
+    const emojiRes = getClientIconSrc({ title: '🚀 面板', url: 'https://123.void.gv.uy', icon: LETTER_ICON_TOKEN })
+    expect(emojiRes.isInline).toBe(true)
+    expect(decodeURIComponent(emojiRes.iconSrc)).toContain('>🚀</text></svg>')
   })
 
   it('repairs early-failed SSR images during initImageErrorFallback without touching lazy placeholders', () => {

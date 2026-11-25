@@ -7,6 +7,7 @@ import { $, $$, escapeHtml, sysConfirm, toast } from './dom'
 import { reloadData } from './refresh'
 import { navState, runtime } from './state'
 import { clearVisitCooldown } from './visit'
+import { LETTER_ICON_TOKEN } from './icons'
 
 const SELECTED_CLASSES = ['ring-2', 'ring-primary', 'bg-primary/10']
 
@@ -34,7 +35,8 @@ async function runBatchAction(
   payload:
     | { action: 'move'; ids: number[]; category_id: number }
     | { action: 'privacy'; ids: number[]; is_private: 0 | 1 }
-    | { action: 'delete'; ids: number[] },
+    | { action: 'delete'; ids: number[] }
+    | { action: 'icon'; ids: number[]; icon: string },
   successLabel: string
 ): Promise<void> {
   try {
@@ -87,6 +89,7 @@ export function renderBatchBar(): void {
     '</div>' +
     '<button type="button" id="batch-set-private" class="btn btn-outline btn-xs">🔒 设私有</button>' +
     '<button type="button" id="batch-set-public" class="btn btn-outline btn-xs">🌐 设公开</button>' +
+    '<button type="button" id="batch-set-letter-icon" class="btn btn-outline btn-xs">🔤 首字母图标</button>' +
     '<button type="button" id="batch-delete" class="btn btn-error btn-outline btn-xs">🗑️ 删除</button>' +
     '<button type="button" id="batch-exit" class="btn btn-ghost btn-xs">完成</button>'
 
@@ -144,6 +147,15 @@ export function renderBatchBar(): void {
       return
     }
     void runBatchAction({ action: 'privacy', ids, is_private: 0 }, '已设为公开')
+  })
+
+  $('#batch-set-letter-icon')?.addEventListener('click', () => {
+    const ids = Array.from(runtime.selectedLinkIds)
+    if (ids.length === 0) {
+      toast('请先点击选择要操作的链接卡片', 'info')
+      return
+    }
+    void runBatchAction({ action: 'icon', ids, icon: LETTER_ICON_TOKEN }, '已设为本地首字母图标')
   })
 
   $('#batch-delete')?.addEventListener('click', () => {

@@ -349,6 +349,7 @@ export class DAO {
       | { action: 'move'; ids: number[]; category_id: number }
       | { action: 'privacy'; ids: number[]; is_private: 0 | 1 }
       | { action: 'delete'; ids: number[] }
+      | { action: 'icon'; ids: number[]; icon: string }
   ): Promise<{ updated: number; skipped: number }> {
     const uniqueIds = Array.from(new Set(input.ids))
     if (uniqueIds.length === 0) return { updated: 0, skipped: 0 }
@@ -412,6 +413,15 @@ export class DAO {
           this.db
             .prepare('UPDATE links SET is_private = ?, updated_at = ? WHERE id = ?')
             .bind(input.is_private, n, id)
+        )
+      }
+    } else if (input.action === 'icon') {
+      const normalizedIcon = input.icon.trim()
+      for (const id of uniqueIds) {
+        stmts.push(
+          this.db
+            .prepare('UPDATE links SET icon = ?, updated_at = ? WHERE id = ?')
+            .bind(normalizedIcon, n, id)
         )
       }
     } else {

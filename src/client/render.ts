@@ -146,7 +146,8 @@ export function renderNav(): void {
 }
 
 export function linkCardHtml(link: Link, isLazy = false): string {
-  const { iconSrc, originalIcon } = getClientIconSrc(link)
+  const { iconSrc, originalIcon, isInline } = getClientIconSrc(link)
+  const shouldLazy = isLazy && !isInline
   const adminBtns = runtime.isAdmin
     ? '<div class="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">' +
       '<button type="button" class="btn btn-ghost btn-xs btn-circle edit-link-btn text-xs" data-link-id="' +
@@ -159,9 +160,9 @@ export function linkCardHtml(link: Link, isLazy = false): string {
   const desc = link.description ? escapeHtml(link.description) : ''
   const tooltipCls = desc ? ' tooltip tooltip-top' : ''
   const tooltipAttr = desc ? ' data-tip="' + desc + '"' : ''
-  const imgAttrs = isLazy
-    ? 'src="' + LAZY_PLACEHOLDER + '" data-src="' + escapeHtml(iconSrc) + '"'
-    : 'src="' + escapeHtml(iconSrc) + '"'
+  const imgAttrs = shouldLazy
+    ? 'src="' + LAZY_PLACEHOLDER + '" data-src="' + escapeHtml(iconSrc) + '" loading="lazy"'
+    : 'src="' + escapeHtml(iconSrc) + '"' + (isInline ? '' : ' loading="lazy"')
   const originalAttr = originalIcon ? ' data-original-icon="' + escapeHtml(originalIcon) + '"' : ''
 
   return (
@@ -185,7 +186,7 @@ export function linkCardHtml(link: Link, isLazy = false): string {
     '<div class="w-14 h-14 flex items-center justify-center flex-shrink-0">' +
     '<img ' +
     imgAttrs +
-    ' alt="" class="w-10 h-10 object-contain" loading="lazy"' +
+    ' alt="" class="w-10 h-10 object-contain"' +
     originalAttr +
     '></div>' +
     '<div class="text-xs font-medium text-center text-base-content/80 truncate w-full leading-tight">' +

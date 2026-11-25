@@ -1,20 +1,13 @@
 /**
  * src/utils/helpers.ts - 通用工具函数
  */
+import { resolveLinkIcon } from '../shared/icon'
 
 /**
- * 构建图标代理 URL
+ * 构建图标代理 URL（若标记为本地首字母图标或非公网域名则直接返回内联 SVG Data URL）
  */
-export function getIconUrl(link: { icon?: string; url: string }): string {
-  if (link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://'))) {
-    return `/api/icon?url=${encodeURIComponent(link.icon)}`
-  }
-  try {
-    const domain = new URL(link.url).hostname
-    return `/api/icon?domain=${encodeURIComponent(domain)}`
-  } catch {
-    return ''
-  }
+export function getIconUrl(link: { icon?: string; url: string; title?: string }): string {
+  return resolveLinkIcon(link).iconSrc
 }
 
 /**

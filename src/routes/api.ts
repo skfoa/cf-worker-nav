@@ -16,6 +16,7 @@ import { requireAuth, requireRoot, getCookieSecret } from '../middleware/auth'
 import { signSession } from '../utils/session'
 import { safeCompare } from '../utils/security'
 import { fetchUrlMetadata } from '../utils/ssrf'
+import { ICON_DOMAIN_REGEX } from '../shared/icon'
 
 const api = new Hono<HonoEnv>()
 
@@ -204,7 +205,7 @@ api.get('/icon', async (c) => {
 
   // ═══ 模式二：按域名自动探测图标 ═══
   if (!domain) return c.text('Missing domain or url parameter', 400)
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*\.[a-zA-Z]{2,}$/.test(domain)) {
+  if (!ICON_DOMAIN_REGEX.test(domain)) {
     return c.text('Invalid domain format', 400)
   }
 

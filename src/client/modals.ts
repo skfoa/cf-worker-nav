@@ -18,6 +18,7 @@ import {
 import { reloadData } from './refresh'
 import { findCatById, navState, runtime } from './state'
 import { clearVisitCooldown } from './visit'
+import { isLetterIcon, isProxyableIconDomain, LETTER_ICON_TOKEN } from './icons'
 
 export function doLogin(): void {
   openModal(
@@ -105,6 +106,26 @@ export function doLogin(): void {
   })
 }
 
+function bindLetterIconToggle(form: HTMLFormElement): void {
+  const checkbox = form.elements.namedItem('use_letter_icon') as HTMLInputElement | null
+  const iconInput = form.elements.namedItem('icon') as HTMLInputElement | null
+  if (!checkbox || !iconInput) return
+
+  const sync = (): void => {
+    iconInput.disabled = checkbox.checked
+    iconInput.placeholder = checkbox.checked ? '已启用本地首字母图标（0 请求）' : '留空自动获取，或填 letter 使用本地首字母图标'
+  }
+  sync()
+  checkbox.addEventListener('change', sync)
+}
+
+function getSubmittedIconValue(form: HTMLFormElement): string {
+  if (isFormCheckboxChecked(form, 'use_letter_icon')) {
+    return LETTER_ICON_TOKEN
+  }
+  return getFormFieldValue(form, 'icon').trim()
+}
+
 function bindMetaFetch(form: HTMLFormElement): void {
   const btn = form.querySelector<HTMLButtonElement>('#btn-fetch-meta')
   if (!btn) return
@@ -122,14 +143,16 @@ function bindMetaFetch(form: HTMLFormElement): void {
       let filled = 0
       const fillIfEmpty = (name: string, val: string): void => {
         const el = form.elements.namedItem(name) as HTMLInputElement | null
-        if (el && !el.value.trim() && val) {
+        if (el && !el.disabled && !el.value.trim() && val) {
           el.value = val
           filled++
         }
       }
       fillIfEmpty('title', res.title)
       fillIfEmpty('description', res.description)
-      fillIfEmpty('icon', res.icon)
+      if (!isFormCheckboxChecked(form, 'use_letter_icon')) {
+        fillIfEmpty('icon', res.icon)
+      }
       if (filled > 0) {
         toast('已识别并填充空白字段', 'success')
       } else if (res.warning) {
@@ -165,13 +188,15 @@ export function showAddLinkModal(): void {
       '<div class="form-control w-full"><div class="label"><span class="label-text">URL</span></div><div class="flex gap-2"><input type="url" name="url" class="input input-bordered flex-1" required placeholder="https://..."><button type="button" id="btn-fetch-meta" class="btn btn-outline btn-sm shrink-0">🔍 自动识别</button></div></div>' +
       '<label class="form-control w-full"><div class="label"><span class="label-text">标题</span></div><input type="text" name="title" class="input input-bordered w-full" required placeholder="网站名称"></label>' +
       '<label class="form-control w-full"><div class="label"><span class="label-text">描述</span></div><input type="text" name="description" class="input input-bordered w-full" placeholder="简短描述"></label>' +
-      '<label class="form-control w-full"><div class="label"><span class="label-text">图标 URL</span></div><input type="text" name="icon" class="input input-bordered w-full" placeholder="留空自动获取"></label>' +
+      '<label class="form-control w-full"><div class="label"><span class="label-text">图标 URL</span></div><input type="text" name="icon" class="input input-bordered w-full" placeholder="留空自动获取，或填 letter 使用本地首字母图标"></label>' +
+      '<label class="flex items-center gap-2 cursor-pointer text-xs text-base-content/70"><input type="checkbox" name="use_letter_icon" class="checkbox checkbox-xs"><span>🔤 使用本地首字母图标（不请求外部图标）</span></label>' +
       '<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" name="is_private" class="toggle toggle-sm"><span class="label-text">🔒 私有链接</span></label>' +
       '<div class="modal-action"><button type="submit" class="btn btn-primary">添加链接</button></div></form>'
   )
 
   const linkForm = $<HTMLFormElement>('#link-form')
   if (linkForm) {
+    bindLetterIconToggle(linkForm)
     bindMetaFetch(linkForm)
     linkForm.addEventListener('submit', async (e) => {
       e.preventDefault()
@@ -181,7 +206,7 @@ export function showAddLinkModal(): void {
         title: getFormFieldValue(form, 'title'),
         url: getFormFieldValue(form, 'url'),
         description: getFormFieldValue(form, 'description'),
-        icon: getFormFieldValue(form, 'icon'),
+        icon: getSubmittedIconValue(form),
         is_private: isFormCheckboxChecked(form, 'is_private') ? 1 : 0,
       }
       try {
@@ -469,7 +494,8 @@ export function showEditLinkModal(link: Link): void {
   } catch {
     /* ignore */
   }
-  const customIconUrl = link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://')) ? link.icon : ''
+  const useLetterIcon = isLetterIcon(link.icon)
+  const customIconUrl = !useLetterIcon && link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://')) ? link.icon : ''
 
   openModal(
     '编辑链接',
@@ -488,12 +514,15 @@ export function showEditLinkModal(link: Link): void {
       '<label class="form-control w-full"><div class="label"><span class="label-text">描述</span></div><input type="text" name="description" class="input input-bordered w-full" value="' +
       escapeHtml(link.description || '') +
       '"></label>' +
-      '<label class="form-control w-full"><div class="label"><span class="label-text">图标 URL</span></div><input type="text" name="icon" class="input input-bordered w-full" value="' +
-      escapeHtml(link.icon || '') +
+      '<label class="form-control w-full"><div class="label"><span class="label-text">图标 URL</span></div><input type="text" name="icon" class="input input-bordered w-full" placeholder="留空自动获取，或填 letter 使用本地首字母图标" value="' +
+      escapeHtml(useLetterIcon ? '' : link.icon || '') +
       '"></label>' +
-      (linkDomain || customIconUrl
+      '<label class="flex items-center gap-2 cursor-pointer text-xs text-base-content/70"><input type="checkbox" name="use_letter_icon" class="checkbox checkbox-xs" ' +
+      (useLetterIcon ? 'checked' : '') +
+      '><span>🔤 使用本地首字母图标（不请求外部图标）</span></label>' +
+      (!useLetterIcon && (isProxyableIconDomain(linkDomain) || customIconUrl)
         ? '<button type="button" id="btn-purge-icon" class="btn btn-outline btn-xs self-start" data-domain="' +
-          escapeHtml(linkDomain) +
+          escapeHtml(isProxyableIconDomain(linkDomain) ? linkDomain : '') +
           '" data-icon-url="' +
           escapeHtml(customIconUrl) +
           '">🔄 刷新图标缓存</button>'
@@ -511,6 +540,7 @@ export function showEditLinkModal(link: Link): void {
 
   const editForm = $<HTMLFormElement>('#edit-form')
   if (editForm) {
+    bindLetterIconToggle(editForm)
     bindMetaFetch(editForm)
     editForm.addEventListener('submit', async (e) => {
       e.preventDefault()
@@ -521,7 +551,7 @@ export function showEditLinkModal(link: Link): void {
         title: getFormFieldValue(form, 'title'),
         url: getFormFieldValue(form, 'url'),
         description: getFormFieldValue(form, 'description'),
-        icon: getFormFieldValue(form, 'icon'),
+        icon: getSubmittedIconValue(form),
         is_private: isFormCheckboxChecked(form, 'is_private') ? 1 : 0,
       }
       try {

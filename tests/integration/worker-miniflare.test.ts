@@ -342,6 +342,36 @@ describe('Worker end-to-end integration (Miniflare workerd + D1)', () => {
     })
     expect(((await delRes.json()) as { updated: number }).updated).toBe(2)
 
+    // 验证批量设为本地首字母图标（icon='letter'）且 SSR 直接输出内联 SVG，不生成 /api/icon 请求
+    const letterCreate = (await (
+      await mf.dispatchFetch(`${ORIGIN}/api/link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: ORIGIN, Cookie: adminCookie },
+        body: JSON.stringify({ category_id: 1, title: 'MySelfHost', url: 'https://no-icon.example.test' }),
+      })
+    ).json()) as { meta: { last_row_id: number } }
+    const letterId = letterCreate.meta.last_row_id
+
+    const iconBatchRes = await mf.dispatchFetch(`${ORIGIN}/api/link/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: ORIGIN, Cookie: adminCookie },
+      body: JSON.stringify({ action: 'icon', ids: [letterId], icon: 'letter' }),
+    })
+    expect(iconBatchRes.status).toBe(200)
+    expect(((await iconBatchRes.json()) as { updated: number }).updated).toBe(1)
+
+    await new Promise((r) => setTimeout(r, 150))
+    const ssrAfterLetter = await (await mf.dispatchFetch(`${ORIGIN}/`)).text()
+    expect(ssrAfterLetter).toContain('MySelfHost')
+    expect(ssrAfterLetter).not.toContain('/api/icon?domain=no-icon.example.test')
+    expect(ssrAfterLetter).toContain('data:image/svg+xml,')
+
+    await mf.dispatchFetch(`${ORIGIN}/api/link/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: ORIGIN, Cookie: adminCookie },
+      body: JSON.stringify({ id: letterId }),
+    })
+
     // 验证超过 D1 单条 SQL 100 参数上限（120 条）时分片查询仍可正常批量移动并清理
     const bulkIds: number[] = []
     for (let i = 0; i < 120; i++) {

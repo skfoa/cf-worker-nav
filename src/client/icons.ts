@@ -1,40 +1,19 @@
 /**
  * src/client/icons.ts - 图标 URL 构建、懒加载与全局容错 SVG 兜底
  */
+import { buildLetterAvatarDataUrl, isLetterIcon, isProxyableIconDomain, LETTER_ICON_TOKEN, resolveLinkIcon } from '../shared/icon'
+
+export { buildLetterAvatarDataUrl, isLetterIcon, isProxyableIconDomain, LETTER_ICON_TOKEN }
 
 export const LAZY_PLACEHOLDER =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E"
 
-export function getClientIconSrc(link: { icon?: string; url: string }): { iconSrc: string; originalIcon: string } {
-  if (link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://'))) {
-    return {
-      iconSrc: '/api/icon?url=' + encodeURIComponent(link.icon),
-      originalIcon: link.icon,
-    }
-  }
-  try {
-    return {
-      iconSrc: '/api/icon?domain=' + encodeURIComponent(new URL(link.url).hostname),
-      originalIcon: '',
-    }
-  } catch {
-    return {
-      iconSrc: '/api/icon?domain=default',
-      originalIcon: '',
-    }
-  }
-}
-
-export function buildLetterAvatarDataUrl(title: string): string {
-  const letter = (title.trim().charAt(0) || '?').toUpperCase()
-  const hue = (letter.charCodeAt(0) * 37) % 360
-  const safeLetter = letter.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">` +
-    `<rect width="64" height="64" rx="14" fill="hsl(${hue},60%,50%)"/>` +
-    `<text x="32" y="32" font-family="system-ui,sans-serif" font-size="30" font-weight="600" fill="white" text-anchor="middle" dominant-baseline="central">${safeLetter}</text>` +
-    `</svg>`
-  return 'data:image/svg+xml,' + encodeURIComponent(svg)
+export function getClientIconSrc(link: {
+  icon?: string
+  url: string
+  title?: string
+}): { iconSrc: string; originalIcon: string; isInline: boolean } {
+  return resolveLinkIcon(link)
 }
 
 export function applyImageFallback(img: HTMLImageElement): void {

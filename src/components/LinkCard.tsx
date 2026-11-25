@@ -3,7 +3,7 @@
  */
 import type { FC } from 'hono/jsx'
 import type { Link } from '../types'
-import { getIconUrl } from '../utils/helpers'
+import { resolveLinkIcon } from '../shared/icon'
 
 interface LinkCardProps {
   link: Link
@@ -14,14 +14,8 @@ interface LinkCardProps {
 const LAZY_PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E"
 
 export const LinkCard: FC<LinkCardProps> = ({ link, isAdmin, lazy = false }) => {
-  const iconSrc = getIconUrl(link)
-  const targetSrc = iconSrc || (() => {
-    try {
-      return `/api/icon?domain=${encodeURIComponent(new URL(link.url).hostname)}`
-    } catch {
-      return '/api/icon?domain=default'
-    }
-  })()
+  const { iconSrc: targetSrc, originalIcon, isInline } = resolveLinkIcon(link)
+  const shouldLazy = lazy && !isInline
 
   return (
     <a
@@ -58,12 +52,12 @@ export const LinkCard: FC<LinkCardProps> = ({ link, isAdmin, lazy = false }) => 
       {/* 图标 — 无背景块，直接悬浮 */}
       <div class="w-14 h-14 flex items-center justify-center flex-shrink-0">
         <img
-          src={lazy ? LAZY_PLACEHOLDER : targetSrc}
-          data-src={lazy ? targetSrc : undefined}
+          src={shouldLazy ? LAZY_PLACEHOLDER : targetSrc}
+          data-src={shouldLazy ? targetSrc : undefined}
           alt=""
           class="w-10 h-10 object-contain"
-          loading="lazy"
-          data-original-icon={link.icon && (link.icon.startsWith('http://') || link.icon.startsWith('https://')) ? link.icon : undefined}
+          loading={isInline ? undefined : 'lazy'}
+          data-original-icon={originalIcon || undefined}
         />
       </div>
 
